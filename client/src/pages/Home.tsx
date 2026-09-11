@@ -1,33 +1,381 @@
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import {
+  Archive,
+  ArrowDown,
+  ArrowUpRight,
+  BarChart3,
+  Bell,
+  BookOpen,
+  CalendarDays,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CirclePlus,
+  Clapperboard,
+  Clock3,
+  Command,
+  Compass,
+  Gamepad2,
+  Heart,
+  LayoutDashboard,
+  ListFilter,
+  MoreHorizontal,
+  Play,
+  Plus,
+  Search,
+  Settings2,
+  Sparkles,
+  Star,
+  Tag,
+  Trophy,
+  Tv,
+  X,
+} from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { Streamdown } from 'streamdown';
+import { startLogin } from "@/const";
 
-/**
- * All content in this page are only for example, replace with your own feature implementation
- * When building pages, remember your instructions in Frontend Workflow, Frontend Best Practices, Design Guide and Common Pitfalls
- */
-export default function Home() {
-  // The useAuth hook provides authentication state.
-  // To implement login/logout, call logout(), or start login from an event
-  // handler: onClick={() => startLogin()} (imported from "@/const"). Never call
-  // startLogin() during render (no href={startLogin()}) — it mints a one-time
-  // nonce cookie and must run only at the moment of navigation.
-  let { user, loading, error, isAuthenticated, logout } = useAuth();
+type MediaType = "Game" | "Series";
+type Status = "Playing" | "Watching" | "Want to play" | "Want to watch" | "Completed" | "Paused";
+type Page = "dashboard" | "library" | "calendar" | "insights";
 
-  // If theme is switchable in App.tsx, we can implement theme toggling like this:
-  // const { theme, toggleTheme } = useTheme();
+type MediaItem = {
+  id: number;
+  title: string;
+  type: MediaType;
+  status: Status;
+  genre: string;
+  platform: string;
+  progress: number;
+  detail: string;
+  image: string;
+  color: string;
+  rating: number;
+  favorite: boolean;
+  lastActive: string;
+  hours: number;
+};
 
+const initialItems: MediaItem[] = [
+  {
+    id: 1,
+    title: "Hollow Knight: Silksong",
+    type: "Game",
+    status: "Playing",
+    genre: "Adventure",
+    platform: "Switch",
+    progress: 82,
+    detail: "24h played",
+    image: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=900&q=85",
+    color: "#c8e8e4",
+    rating: 4.8,
+    favorite: true,
+    lastActive: "Today",
+    hours: 24,
+  },
+  {
+    id: 2,
+    title: "The Last of Us",
+    type: "Series",
+    status: "Watching",
+    genre: "Drama",
+    platform: "Max",
+    progress: 68,
+    detail: "S2 · E4 of 7",
+    image: "https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=900&q=85",
+    color: "#ead8ef",
+    rating: 4.7,
+    favorite: true,
+    lastActive: "Yesterday",
+    hours: 9,
+  },
+  {
+    id: 3,
+    title: "Clair Obscur: Expedition 33",
+    type: "Game",
+    status: "Want to play",
+    genre: "RPG",
+    platform: "PlayStation",
+    progress: 0,
+    detail: "Added 2 days ago",
+    image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=900&q=85",
+    color: "#f5dfc5",
+    rating: 0,
+    favorite: false,
+    lastActive: "2 days ago",
+    hours: 0,
+  },
+  {
+    id: 4,
+    title: "Severance",
+    type: "Series",
+    status: "Completed",
+    genre: "Mystery",
+    platform: "Apple TV+",
+    progress: 100,
+    detail: "2 seasons completed",
+    image: "https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=900&q=85",
+    color: "#dfe8f6",
+    rating: 4.9,
+    favorite: true,
+    lastActive: "May 24",
+    hours: 16,
+  },
+  {
+    id: 5,
+    title: "Hades II",
+    type: "Game",
+    status: "Completed",
+    genre: "Roguelike",
+    platform: "PC",
+    progress: 100,
+    detail: "38h played",
+    image: "https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?auto=format&fit=crop&w=900&q=85",
+    color: "#f4c8d7",
+    rating: 4.6,
+    favorite: false,
+    lastActive: "May 18",
+    hours: 38,
+  },
+  {
+    id: 6,
+    title: "Andor",
+    type: "Series",
+    status: "Want to watch",
+    genre: "Sci-fi",
+    platform: "Disney+",
+    progress: 0,
+    detail: "2 seasons · 24 eps",
+    image: "https://images.unsplash.com/photo-1518676590629-3dcbd9c5a5c9?auto=format&fit=crop&w=900&q=85",
+    color: "#d1e7ee",
+    rating: 0,
+    favorite: false,
+    lastActive: "May 12",
+    hours: 0,
+  },
+  {
+    id: 7,
+    title: "The Bear",
+    type: "Series",
+    status: "Paused",
+    genre: "Comedy",
+    platform: "Hulu",
+    progress: 42,
+    detail: "S3 · E2 of 10",
+    image: "https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=900&q=85",
+    color: "#f5ead0",
+    rating: 4.2,
+    favorite: false,
+    lastActive: "Apr 28",
+    hours: 7,
+  },
+  {
+    id: 8,
+    title: "Balatro",
+    type: "Game",
+    status: "Want to play",
+    genre: "Strategy",
+    platform: "Steam Deck",
+    progress: 0,
+    detail: "Added Apr 19",
+    image: "https://images.unsplash.com/photo-1611996575749-79a3a250f948?auto=format&fit=crop&w=900&q=85",
+    color: "#e4d8f5",
+    rating: 4.5,
+    favorite: false,
+    lastActive: "Apr 19",
+    hours: 0,
+  },
+];
+
+const navItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: "dashboard", label: "Overview", icon: LayoutDashboard },
+  { id: "library", label: "My library", icon: Archive },
+  { id: "calendar", label: "Calendar", icon: CalendarDays },
+  { id: "insights", label: "Insights", icon: BarChart3 },
+];
+
+const statusOptions: Status[] = ["Playing", "Watching", "Want to play", "Want to watch", "Completed", "Paused"];
+
+function formatDate() {
+  return new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
+}
+
+function getNextStatus(item: MediaItem): Status {
+  if (item.status === "Completed") return item.type === "Game" ? "Playing" : "Watching";
+  if (item.type === "Game" && item.status === "Want to play") return "Playing";
+  if (item.type === "Series" && item.status === "Want to watch") return "Watching";
+  return "Completed";
+}
+
+function Cover({ item, large = false }: { item: MediaItem; large?: boolean }) {
   return (
-    <div className="min-h-screen flex flex-col">
-      <main>
-        {/* Example: lucide-react for icons */}
-        <Loader2 className="animate-spin" />
-        Example Page
-        {/* Example: Streamdown for markdown rendering */}
-        <Streamdown>Any **markdown** content</Streamdown>
-        <Button variant="default">Example Button</Button>
-      </main>
+    <div className={`cover ${large ? "cover-large" : ""}`} style={{ backgroundColor: item.color }}>
+      <img src={item.image} alt="" />
+      <div className="cover-shade" />
+      <div className="cover-type"><span>{item.type === "Game" ? <Gamepad2 size={12} /> : <Tv size={12} />}</span>{item.type}</div>
+      <div className="cover-mark">{item.type === "Game" ? "PLAY" : "WATCH"}</div>
     </div>
   );
+}
+
+function ProgressBar({ value, color = "#7358e8" }: { value: number; color?: string }) {
+  return <div className="progress-track"><span style={{ width: `${value}%`, background: color }} /></div>;
+}
+
+export default function Home() {
+  const { user, isAuthenticated, logout } = useAuth();
+  const [page, setPage] = useState<Page>("dashboard");
+  const [items, setItems] = useState<MediaItem[]>(() => {
+    try {
+      const saved = localStorage.getItem("luma-entertainment-items");
+      return saved ? JSON.parse(saved) as MediaItem[] : initialItems;
+    } catch {
+      return initialItems;
+    }
+  });
+  const [activeType, setActiveType] = useState<"All" | MediaType>("All");
+  const [search, setSearch] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [newItem, setNewItem] = useState({ title: "", type: "Game" as MediaType, status: "Want to play" as Status, genre: "Adventure", platform: "" });
+
+  useEffect(() => {
+    localStorage.setItem("luma-entertainment-items", JSON.stringify(items));
+  }, [items]);
+
+  const filteredItems = useMemo(() => items.filter((item) => {
+    const matchesType = activeType === "All" || item.type === activeType;
+    const matchesSearch = item.title.toLowerCase().includes(search.toLowerCase()) || item.genre.toLowerCase().includes(search.toLowerCase());
+    return matchesType && matchesSearch;
+  }), [items, activeType, search]);
+
+  const stats = useMemo(() => {
+    const completed = items.filter((item) => item.status === "Completed").length;
+    const active = items.filter((item) => ["Playing", "Watching"].includes(item.status)).length;
+    const rated = items.filter((item) => item.rating > 0);
+    return { total: items.length, completed, active, completion: Math.round((completed / items.length) * 100), hours: items.reduce((sum, item) => sum + item.hours, 0), rating: rated.length ? (rated.reduce((sum, item) => sum + item.rating, 0) / rated.length).toFixed(1) : "—" };
+  }, [items]);
+
+  const updateItem = (id: number, patch: Partial<MediaItem>) => {
+    setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  const advanceItem = (item: MediaItem) => {
+    const next = getNextStatus(item);
+    updateItem(item.id, { status: next, progress: next === "Completed" ? 100 : Math.max(item.progress, 12) });
+    toast.success(`${item.title} moved to ${next.toLowerCase()}`);
+  };
+
+  const toggleFavorite = (item: MediaItem) => {
+    updateItem(item.id, { favorite: !item.favorite });
+    toast(item.favorite ? "Removed from favorites" : "Added to favorites", { icon: item.favorite ? <Heart size={15} /> : <Heart size={15} fill="currentColor" /> });
+  };
+
+  const addItem = () => {
+    if (!newItem.title.trim()) {
+      toast.error("Give your item a title first");
+      return;
+    }
+    const item: MediaItem = {
+      id: Date.now(),
+      title: newItem.title.trim(),
+      type: newItem.type,
+      status: newItem.status,
+      genre: newItem.genre,
+      platform: newItem.platform || (newItem.type === "Game" ? "My library" : "Watchlist"),
+      progress: 0,
+      detail: "Just added",
+      image: newItem.type === "Game" ? "https://images.unsplash.com/photo-1593305841991-05c297ba4575?auto=format&fit=crop&w=900&q=85" : "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=900&q=85",
+      color: newItem.type === "Game" ? "#d8e9f4" : "#eed8eb",
+      rating: 0,
+      favorite: false,
+      lastActive: "Just now",
+      hours: 0,
+    };
+    setItems((current) => [item, ...current]);
+    setShowAdd(false);
+    setNewItem({ title: "", type: "Game", status: "Want to play", genre: "Adventure", platform: "" });
+    toast.success(`${item.title} added to your library`);
+  };
+
+  const monthDate = new Date(2025, 5 + monthOffset, 1);
+  const monthName = monthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay();
+  const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+  const calendarCells = Array.from({ length: Math.ceil((firstDay + daysInMonth) / 7) * 7 }, (_, index) => {
+    const day = index - firstDay + 1;
+    return day > 0 && day <= daysInMonth ? day : null;
+  });
+
+  const pageTitle = page === "dashboard" ? "Overview" : page === "library" ? "My library" : page === "calendar" ? "Calendar" : "Insights";
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand"><div className="brand-orbit"><Sparkles size={16} /></div><div><strong>luma</strong><span>entertainment tracker</span></div></div>
+        <div className="profile-card"><div className="avatar">{user?.name?.[0] ?? "S"}</div><div className="profile-copy"><strong>{user?.name ?? "Sam's space"}</strong><span>{isAuthenticated ? "Synced account" : "Personal library"}</span></div><MoreHorizontal size={16} className="muted-icon" /></div>
+        <div className="sidebar-label">Workspace</div>
+        <nav className="nav-list">{navItems.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? "active" : ""}`} onClick={() => setPage(id)}><Icon size={17} /><span>{label}</span>{id === "library" && <em>{items.length}</em>}</button>)}</nav>
+        <div className="sidebar-label sidebar-label-spaced">Collections</div>
+        <nav className="nav-list"><button className="nav-item" onClick={() => { setPage("library"); setActiveType("Game"); }}><Gamepad2 size={17} /><span>Games</span><em>{items.filter((item) => item.type === "Game").length}</em></button><button className="nav-item" onClick={() => { setPage("library"); setActiveType("Series"); }}><Clapperboard size={17} /><span>Series</span><em>{items.filter((item) => item.type === "Series").length}</em></button><button className="nav-item" onClick={() => { setPage("library"); setSearch("favorites"); }}><Heart size={17} /><span>Favorites</span></button></nav>
+        <div className="sidebar-bottom"><div className="mini-goal"><div className="mini-goal-head"><span>June goal</span><strong>7 / 10</strong></div><ProgressBar value={70} color="#e3a6c8" /><span className="mini-goal-caption">3 more completions to go</span></div><button className="nav-item"><Settings2 size={17} /><span>Settings</span></button><div className="made-with"><span className="made-dot" /> Made for slow media days</div></div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar"><div><span className="eyebrow">{formatDate()}</span><h1>{pageTitle}</h1></div><div className="topbar-actions"><button className="icon-button" aria-label="Notifications"><Bell size={18} /><i /></button><div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search your library" /><kbd><Command size={11} /> K</kbd></div><button className="primary-button" onClick={() => setShowAdd(true)}><Plus size={17} /> Add item</button></div></header>
+
+        {page === "dashboard" && <Dashboard stats={stats} items={items} setPage={setPage} activeType={activeType} setActiveType={setActiveType} advanceItem={advanceItem} toggleFavorite={toggleFavorite} setSelectedItem={setSelectedItem} />}
+        {page === "library" && <Library items={filteredItems} activeType={activeType} setActiveType={setActiveType} search={search} setSearch={setSearch} advanceItem={advanceItem} toggleFavorite={toggleFavorite} setSelectedItem={setSelectedItem} />}
+        {page === "calendar" && <CalendarPage monthName={monthName} monthOffset={monthOffset} setMonthOffset={setMonthOffset} calendarCells={calendarCells} items={items} setSelectedItem={setSelectedItem} />}
+        {page === "insights" && <Insights stats={stats} items={items} />}
+      </main>
+
+      {showAdd && <AddModal value={newItem} setValue={setNewItem} onClose={() => setShowAdd(false)} onAdd={addItem} />}
+      {selectedItem && <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onAdvance={() => { advanceItem(selectedItem); setSelectedItem(null); }} onFavorite={() => toggleFavorite(selectedItem)} />}
+      {!isAuthenticated && <button className="account-pill" onClick={startLogin}><span className="account-dot" /> Sign in to sync</button>}
+      {isAuthenticated && <button className="account-pill" onClick={() => logout()}><span className="account-dot live" /> Sign out</button>}
+    </div>
+  );
+}
+
+type TrackerStats = { total: number; completed: number; active: number; completion: number; hours: number; rating: string };
+
+function Dashboard({ stats, items, setPage, activeType, setActiveType, advanceItem, toggleFavorite, setSelectedItem }: { stats: TrackerStats; items: MediaItem[]; setPage: (page: Page) => void; activeType: "All" | MediaType; setActiveType: (type: "All" | MediaType) => void; advanceItem: (item: MediaItem) => void; toggleFavorite: (item: MediaItem) => void; setSelectedItem: (item: MediaItem) => void }) {
+  const statItems = [{ label: "In your library", value: stats.total, icon: Archive, tint: "lavender" }, { label: "Completed", value: stats.completed, icon: Check, tint: "mint" }, { label: "Hours logged", value: `${stats.hours}h`, icon: Clock3, tint: "peach" }, { label: "Average rating", value: stats.rating, icon: Star, tint: "pink" }];
+  const active = items.filter((item) => ["Playing", "Watching"].includes(item.status));
+  const next = items.filter((item) => ["Want to play", "Want to watch"].includes(item.status)).slice(0, 3);
+  const favorites = items.filter((item) => item.favorite).slice(0, 4);
+  return <div className="page-stack">
+    <section className="welcome-panel"><div className="welcome-copy"><span className="eyebrow accent-eyebrow"><Sparkles size={13} /> Your personal media rhythm</span><h2>Make room for stories<br /><em>worth your time.</em></h2><p>Keep the games you play and the series you watch in one calm, colorful place.</p><div className="welcome-actions"><button className="dark-button" onClick={() => setPage("library")}>Explore library <ArrowUpRight size={16} /></button><button className="text-button" onClick={() => setPage("calendar")}><CalendarDays size={15} /> Open calendar</button></div></div><div className="welcome-art"><div className="sun-shape" /><div className="art-card art-card-back"><Gamepad2 size={24} /><span>play next</span></div><div className="art-card art-card-front"><div className="art-poster" /><div><strong>slow evenings</strong><small>4 items in your queue</small></div></div><div className="art-spark spark-one">✦</div><div className="art-spark spark-two">✦</div></div></section>
+    <section className="stat-grid">{statItems.map(({ label, value, icon: Icon, tint }) => <div className={`stat-card ${tint}`} key={label}><div className="stat-icon"><Icon size={16} /></div><span>{label}</span><strong>{value}</strong><small>{label === "Completed" ? `${stats.completion}% of your library` : label === "Hours logged" ? "this year so far" : label === "Average rating" ? "from your rated titles" : "across games & series"}</small></div>)}</section>
+    <section className="section-heading"><div><span className="eyebrow">Keep the momentum</span><h2>Continue where you left off</h2></div><button className="link-button" onClick={() => setPage("library")}>View all <ArrowUpRight size={15} /></button></section>
+    <section className="active-grid">{active.map((item) => <article className="active-card" key={item.id} onClick={() => setSelectedItem(item)}><Cover item={item} /><div className="active-card-body"><div className="card-overline"><span>{item.type}</span><button className={`heart-button ${item.favorite ? "liked" : ""}`} onClick={(event) => { event.stopPropagation(); toggleFavorite(item); }}><Heart size={15} fill={item.favorite ? "currentColor" : "none"} /></button></div><h3>{item.title}</h3><p>{item.detail} <span>·</span> {item.platform}</p><div className="progress-line"><ProgressBar value={item.progress} color={item.type === "Game" ? "#7358e8" : "#d986b3"} /><strong>{item.progress}%</strong></div><button className="continue-button" onClick={(event) => { event.stopPropagation(); advanceItem(item); }}>{item.progress === 100 ? "Mark as active" : <><Play size={13} fill="currentColor" /> Continue</>}</button></div></article>)}</section>
+    <section className="lower-grid"><div className="section-block"><div className="section-heading compact"><div><span className="eyebrow">Your queue</span><h2>Up next</h2></div><button className="icon-button subtle" onClick={() => setPage("library")}><ArrowUpRight size={16} /></button></div><div className="queue-list">{next.map((item, index) => <button className="queue-row" key={item.id} onClick={() => setSelectedItem(item)}><span className="queue-number">0{index + 1}</span><Cover item={item} /><span className="queue-info"><strong>{item.title}</strong><small>{item.type} · {item.genre}</small></span><ChevronRight size={16} className="muted-icon" /></button>)}</div></div><div className="section-block favorites-block"><div className="section-heading compact"><div><span className="eyebrow">A little love</span><h2>Favorites</h2></div><button className="filter-chip" onClick={() => setActiveType(activeType === "All" ? "Game" : "All")}><ListFilter size={13} /> {activeType === "All" ? "All types" : activeType}</button></div><div className="favorite-grid">{favorites.map((item) => <button className="favorite-tile" key={item.id} onClick={() => setSelectedItem(item)}><Cover item={item} /><div><strong>{item.title}</strong><span><Star size={12} fill="currentColor" /> {item.rating}</span></div></button>)}</div></div></section>
+  </div>;
+}
+
+function Library({ items, activeType, setActiveType, search, setSearch, advanceItem, toggleFavorite, setSelectedItem }: { items: MediaItem[]; activeType: "All" | MediaType; setActiveType: (type: "All" | MediaType) => void; search: string; setSearch: (value: string) => void; advanceItem: (item: MediaItem) => void; toggleFavorite: (item: MediaItem) => void; setSelectedItem: (item: MediaItem) => void }) {
+  const [status, setStatus] = useState<"All" | Status>("All");
+  const visible = items.filter((item) => status === "All" || item.status === status);
+  return <div className="page-stack"><section className="library-intro"><div><span className="eyebrow accent-eyebrow"><Archive size={13} /> The whole story</span><h2>Your library, <em>your way.</em></h2><p>Browse everything you are playing, watching, saving, and loving.</p></div><div className="library-summary"><strong>{items.length}</strong><span>items shown</span><div className="type-pills"><button className={activeType === "All" ? "selected" : ""} onClick={() => setActiveType("All")}>All</button><button className={activeType === "Game" ? "selected" : ""} onClick={() => setActiveType("Game")}><Gamepad2 size={13} /> Games</button><button className={activeType === "Series" ? "selected" : ""} onClick={() => setActiveType("Series")}><Tv size={13} /> Series</button></div></div></section><div className="library-toolbar"><div className="filter-tabs">{["All", "Playing", "Watching", "Want to play", "Want to watch", "Completed", "Paused"].map((tab) => <button key={tab} className={status === tab ? "selected" : ""} onClick={() => setStatus(tab as "All" | Status)}>{tab}</button>)}</div><div className="toolbar-search"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title or genre" /></div></div>{visible.length ? <section className="library-grid">{visible.map((item) => <article className="library-card" key={item.id} onClick={() => setSelectedItem(item)}><div className="library-cover-wrap"><Cover item={item} large /><span className={`status-badge ${item.status.toLowerCase().replaceAll(" ", "-")}`}>{item.status}</span><button className={`card-heart ${item.favorite ? "liked" : ""}`} onClick={(event) => { event.stopPropagation(); toggleFavorite(item); }}><Heart size={15} fill={item.favorite ? "currentColor" : "none"} /></button></div><div className="library-card-copy"><div className="card-overline"><span>{item.genre}</span><span>{item.platform}</span></div><h3>{item.title}</h3><p>{item.detail}</p>{item.progress > 0 && <div className="progress-line"><ProgressBar value={item.progress} color={item.type === "Game" ? "#7358e8" : "#d986b3"} /><strong>{item.progress}%</strong></div>}<button className="small-action" onClick={(event) => { event.stopPropagation(); advanceItem(item); }}>{item.status === "Completed" ? "Revisit status" : "Update progress"} <ArrowUpRight size={13} /></button></div></article>)}</section> : <div className="empty-state"><Compass size={28} /><h3>No stories found</h3><p>Try a different search or filter.</p></div>}</div>;
+}
+
+function CalendarPage({ monthName, monthOffset, setMonthOffset, calendarCells, items, setSelectedItem }: { monthName: string; monthOffset: number; setMonthOffset: (value: number) => void; calendarCells: (number | null)[]; items: MediaItem[]; setSelectedItem: (item: MediaItem) => void }) {
+  const events = [{ day: 3, label: "The Last of Us", type: "series", item: items[1] }, { day: 7, label: "Silksong session", type: "game", item: items[0] }, { day: 12, label: "Andor", type: "series", item: items[5] }, { day: 18, label: "Hades II", type: "game", item: items[4] }, { day: 24, label: "The Bear", type: "series", item: items[6] }];
+  return <div className="page-stack"><section className="calendar-intro"><div><span className="eyebrow accent-eyebrow"><CalendarDays size={13} /> A soft plan</span><h2>Make time for <em>good stories.</em></h2><p>See what you started, finished, and saved across the month.</p></div><div className="calendar-legend"><span><i className="dot dot-purple" /> Playing</span><span><i className="dot dot-pink" /> Watching</span><span><i className="dot dot-yellow" /> Planned</span></div></section><section className="calendar-layout"><div className="calendar-card"><div className="calendar-head"><button className="icon-button subtle" onClick={() => setMonthOffset(monthOffset - 1)}><ChevronLeft size={17} /></button><div><strong>{monthName}</strong><span>2025 · your media timeline</span></div><button className="icon-button subtle" onClick={() => setMonthOffset(monthOffset + 1)}><ChevronRight size={17} /></button></div><div className="weekday-row">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{calendarCells.map((day, index) => { const event = events.find((entry) => entry.day === day); return <div className={`calendar-day ${day === new Date().getDate() && monthOffset === 0 ? "today" : ""} ${!day ? "blank" : ""}`} key={`${day}-${index}`}>{day && <><span className="day-number">{day}</span>{event && <button className={`calendar-event ${event.type}`} onClick={() => setSelectedItem(event.item)}><i />{event.label}</button>}</>}</div>; })}</div></div><aside className="calendar-aside"><div className="aside-title"><span className="eyebrow">This month</span><strong>5 moments to remember</strong></div>{events.map((event) => <button className="event-row" key={event.day} onClick={() => setSelectedItem(event.item)}><div className={`event-day ${event.type}`}><strong>{event.day}</strong><span>JUN</span></div><div><strong>{event.label}</strong><span>{event.item.type} · {event.item.platform}</span></div><ChevronRight size={15} className="muted-icon" /></button>)}<button className="add-calendar-button"><CirclePlus size={15} /> Add a moment</button></aside></section></div>;
+}
+
+function Insights({ stats, items }: { stats: TrackerStats; items: MediaItem[] }) {
+  const genres = [{ name: "Adventure", value: 86, color: "#7358e8" }, { name: "Drama", value: 71, color: "#d986b3" }, { name: "RPG", value: 58, color: "#7dc8bf" }, { name: "Comedy", value: 43, color: "#e5b566" }];
+  const months = [{ name: "Jan", value: 25 }, { name: "Feb", value: 39 }, { name: "Mar", value: 31 }, { name: "Apr", value: 64 }, { name: "May", value: 48 }, { name: "Jun", value: 78 }];
+  return <div className="page-stack"><section className="insights-intro"><div><span className="eyebrow accent-eyebrow"><BarChart3 size={13} /> Your year in stories</span><h2>Patterns worth <em>noticing.</em></h2><p>Small snapshots of how you spend your favorite hours.</p></div><div className="streak-badge"><Trophy size={20} /><div><strong>12 day</strong><span>tracking streak</span></div></div></section><section className="insights-grid"><div className="insight-card wide"><div className="insight-head"><div><span className="eyebrow">Monthly activity</span><h3>Your media rhythm</h3></div><span className="period-pill">This year <ChevronRight size={13} /></span></div><div className="bar-chart">{months.map((month) => <div className="bar-column" key={month.name}><div className="bar-value">{month.value}</div><div className="bar"><span style={{ height: `${month.value}%` }} /></div><small>{month.name}</small></div>)}</div><div className="chart-note"><span className="dot dot-purple" /> Items completed <strong>+24% from last year</strong></div></div><div className="insight-card"><div className="insight-head"><div><span className="eyebrow">Completion</span><h3>At a glance</h3></div><div className="ring-chart" style={{ background: `conic-gradient(#7358e8 ${stats.completion * 3.6}deg, #edeaf3 0)` }}><div><strong>{stats.completion}%</strong><span>complete</span></div></div></div><div className="completion-rows"><div><span><i className="dot dot-purple" /> Games</span><strong>{items.filter((item) => item.type === "Game" && item.status === "Completed").length} done</strong></div><div><span><i className="dot dot-pink" /> Series</span><strong>{items.filter((item) => item.type === "Series" && item.status === "Completed").length} done</strong></div></div></div><div className="insight-card"><div className="insight-head"><div><span className="eyebrow">Your taste</span><h3>Favorite genres</h3></div><Tag size={18} className="muted-icon" /></div><div className="genre-list">{genres.map((genre) => <div className="genre-row" key={genre.name}><div><span>{genre.name}</span><strong>{genre.value}%</strong></div><ProgressBar value={genre.value} color={genre.color} /></div>)}</div></div><div className="insight-card wide split-card"><div><span className="eyebrow">Time well spent</span><h3>You logged <em>{stats.hours} hours</em><br />with your stories.</h3><p>Your completed titles are getting more ambitious — nice.</p><button className="small-action">See activity <ArrowUpRight size={13} /></button></div><div className="insight-illustration"><Clock3 size={38} /><span>hours<br />logged</span></div></div></section></div>;
+}
+
+function AddModal({ value, setValue, onClose, onAdd }: { value: { title: string; type: MediaType; status: Status; genre: string; platform: string }; setValue: (value: { title: string; type: MediaType; status: Status; genre: string; platform: string }) => void; onClose: () => void; onAdd: () => void }) {
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="eyebrow accent-eyebrow"><CirclePlus size={13} /> New addition</span><h2>Add to your library</h2></div><button className="icon-button subtle" onClick={onClose}><X size={17} /></button></div><label>Title<input autoFocus value={value.title} onChange={(event) => setValue({ ...value, title: event.target.value })} placeholder="What are you making room for?" /></label><div className="form-two"><label>Type<select value={value.type} onChange={(event) => setValue({ ...value, type: event.target.value as MediaType, status: event.target.value === "Game" ? "Want to play" : "Want to watch" })}><option>Game</option><option>Series</option></select></label><label>Status<select value={value.status} onChange={(event) => setValue({ ...value, status: event.target.value as Status })}>{statusOptions.map((status) => <option key={status}>{status}</option>)}</select></label></div><div className="form-two"><label>Genre<input value={value.genre} onChange={(event) => setValue({ ...value, genre: event.target.value })} placeholder="Adventure" /></label><label>Platform<input value={value.platform} onChange={(event) => setValue({ ...value, platform: event.target.value })} placeholder={value.type === "Game" ? "PC, Switch..." : "Netflix, Max..."} /></label></div><div className="modal-actions"><button className="text-button" onClick={onClose}>Cancel</button><button className="dark-button" onClick={onAdd}>Add item <ArrowUpRight size={16} /></button></div></div></div>;
+}
+
+function DetailModal({ item, onClose, onAdvance, onFavorite }: { item: MediaItem; onClose: () => void; onAdvance: () => void; onFavorite: () => void }) {
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="detail-modal" onMouseDown={(event) => event.stopPropagation()}><div className="detail-hero"><Cover item={item} large /><div className="detail-hero-content"><div className="card-overline"><span>{item.type} · {item.genre}</span><button className={`heart-button ${item.favorite ? "liked" : ""}`} onClick={onFavorite}><Heart size={16} fill={item.favorite ? "currentColor" : "none"} /></button></div><h2>{item.title}</h2><p>{item.platform} <span>·</span> {item.lastActive}</p><div className="detail-rating">{item.rating > 0 ? <><Star size={15} fill="currentColor" /> {item.rating} personal rating</> : "Not rated yet"}</div></div><button className="detail-close" onClick={onClose}><X size={18} /></button></div><div className="detail-body"><div className="detail-stat"><span>Status</span><strong>{item.status}</strong></div><div className="detail-stat"><span>Progress</span><strong>{item.progress}%</strong></div><div className="detail-stat"><span>Time logged</span><strong>{item.hours} hours</strong></div><div className="detail-progress"><div className="progress-line"><ProgressBar value={item.progress} color={item.type === "Game" ? "#7358e8" : "#d986b3"} /><strong>{item.progress}%</strong></div><small>{item.detail}</small></div></div><div className="detail-actions"><button className="text-button" onClick={onClose}>Close</button><button className="dark-button" onClick={onAdvance}>{item.status === "Completed" ? "Move back to active" : "Update status"} <Check size={15} /></button></div></div></div>;
 }
