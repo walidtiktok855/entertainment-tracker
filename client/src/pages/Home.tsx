@@ -18,15 +18,19 @@ import {
   Compass,
   Gamepad2,
   Heart,
+  ListChecks,
+  Loader2,
   LayoutDashboard,
   ListFilter,
   MoreHorizontal,
   Play,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
   Sparkles,
   Star,
+  Timer,
   Tag,
   Trophy,
   Tv,
@@ -34,8 +38,9 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { startLogin } from "@/const";
+import { trpc } from "@/lib/trpc";
 
-type MediaType = "Game" | "Series";
+type MediaType = "Game" | "Series" | "Movie";
 type Status = "Playing" | "Watching" | "Want to play" | "Want to watch" | "Completed" | "Paused";
 type Page = "dashboard" | "library" | "calendar" | "insights";
 
@@ -54,7 +59,11 @@ type MediaItem = {
   favorite: boolean;
   lastActive: string;
   hours: number;
+  externalId?: string;
+  metadataJson?: string;
 };
+
+type MetadataResult = { externalId: string; title: string; type: MediaType; genre: string; platform: string; image: string; detail: string; status: Status };
 
 const initialItems: MediaItem[] = [
   {
@@ -196,6 +205,51 @@ const navItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
 
 const statusOptions: Status[] = ["Playing", "Watching", "Want to play", "Want to watch", "Completed", "Paused"];
 
+function itemColor(item: { type: MediaType; genre?: string | null }) {
+  if (item.type === "Game") return item.genre === "RPG" ? "#f5dfc5" : "#d8e9f4";
+  if (item.type === "Movie") return "#f5dce7";
+  return "#ead8ef";
+}
+
+function fromServerItem(item: any): MediaItem {
+  return {
+    id: item.id,
+    title: item.title,
+    type: item.type,
+    status: item.status,
+    genre: item.genre ?? "Uncategorized",
+    platform: item.platform ?? "My library",
+    progress: item.progress ?? 0,
+    detail: item.detail ?? "Just added",
+    image: item.image ?? "",
+    color: itemColor(item),
+    rating: (item.rating ?? 0) / 10,
+    favorite: Boolean(item.favorite),
+    lastActive: "Synced just now",
+    hours: item.hours ?? 0,
+    externalId: item.externalId ?? undefined,
+    metadataJson: item.metadataJson ?? undefined,
+  };
+}
+
+function toSyncItem(item: MediaItem) {
+  return {
+    externalId: item.externalId,
+    title: item.title,
+    type: item.type,
+    status: item.status,
+    genre: item.genre,
+    platform: item.platform,
+    progress: item.progress,
+    rating: Math.round(item.rating * 10),
+    favorite: item.favorite,
+    hours: item.hours,
+    detail: item.detail,
+    image: item.image,
+    metadataJson: item.metadataJson,
+  };
+}
+
 function formatDate() {
   return new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
 }
@@ -224,6 +278,12 @@ function ProgressBar({ value, color = "#7358e8" }: { value: number; color?: stri
 
 export default function Home() {
   const { user, isAuthenticated, logout } = useAuth();
+  const utils = trpc.useUtils();
+  const syncedLibrary = trpc.tracker.list.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const syncMutation = trpc.tracker.sync.useMutation({ onSuccess: (serverItems) => { setItems(serverItems.map(fromServerItem)); toast.success("Library synced to your account"); } });
+  const updateMutation = trpc.tracker.update.useMutation();
+  const [metadataQuery, setMetadataQuery] = useState({ query: "__disabled__", type: "Game" as MediaType });
+  const metadataSearch = trpc.tracker.search.useQuery(metadataQuery, { enabled: false, retry: false });
   const [page, setPage] = useState<Page>("dashboard");
   const [items, setItems] = useState<MediaItem[]>(() => {
     try {
@@ -239,10 +299,19 @@ export default function Home() {
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
   const [monthOffset, setMonthOffset] = useState(0);
   const [newItem, setNewItem] = useState({ title: "", type: "Game" as MediaType, status: "Want to play" as Status, genre: "Adventure", platform: "" });
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    if (isAuthenticated && syncedLibrary.data && syncedLibrary.data.length > 0) setItems(syncedLibrary.data.map(fromServerItem));
+  }, [isAuthenticated, syncedLibrary.data]);
 
   useEffect(() => {
     localStorage.setItem("luma-entertainment-items", JSON.stringify(items));
   }, [items]);
+
+  useEffect(() => {
+    if (metadataQuery.query !== "__disabled__") metadataSearch.refetch();
+  }, [metadataQuery]);
 
   const filteredItems = useMemo(() => items.filter((item) => {
     const matchesType = activeType === "All" || item.type === activeType;
@@ -259,6 +328,19 @@ export default function Home() {
 
   const updateItem = (id: number, patch: Partial<MediaItem>) => {
     setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+    if (isAuthenticated && id < 1000000000000) {
+      const serverPatch: Record<string, unknown> = {};
+      ["title", "type", "status", "genre", "platform", "progress", "rating", "favorite", "hours", "detail", "image", "metadataJson"].forEach((key) => {
+        if (key in patch) serverPatch[key] = key === "rating" ? Math.round(Number(patch[key as keyof MediaItem]) * 10) : patch[key as keyof MediaItem];
+      });
+      updateMutation.mutate({ id, patch: serverPatch as any });
+    }
+  };
+
+  const syncLibrary = async () => {
+    if (!isAuthenticated) { startLogin(); return; }
+    setSyncing(true);
+    try { await syncMutation.mutateAsync({ items: items.map(toSyncItem) }); } finally { setSyncing(false); }
   };
 
   const advanceItem = (item: MediaItem) => {
@@ -293,7 +375,9 @@ export default function Home() {
       lastActive: "Just now",
       hours: 0,
     };
-    setItems((current) => [item, ...current]);
+    const nextItems = [item, ...items];
+    setItems(nextItems);
+    if (isAuthenticated) syncMutation.mutate({ items: nextItems.map(toSyncItem) });
     setShowAdd(false);
     setNewItem({ title: "", type: "Game", status: "Want to play", genre: "Adventure", platform: "" });
     toast.success(`${item.title} added to your library`);
@@ -331,10 +415,10 @@ export default function Home() {
         {page === "insights" && <Insights stats={stats} items={items} />}
       </main>
 
-      {showAdd && <AddModal value={newItem} setValue={setNewItem} onClose={() => setShowAdd(false)} onAdd={addItem} />}
-      {selectedItem && <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onAdvance={() => { advanceItem(selectedItem); setSelectedItem(null); }} onFavorite={() => toggleFavorite(selectedItem)} />}
+      {showAdd && <AddModal value={newItem} setValue={setNewItem} onClose={() => setShowAdd(false)} onAdd={addItem} metadataResults={(metadataSearch.data as MetadataResult[] | undefined) ?? []} metadataLoading={metadataSearch.isFetching} onSearchMetadata={(query, type) => setMetadataQuery({ query, type })} onSelectMetadata={(result: MetadataResult) => { setNewItem({ title: result.title, type: result.type, status: result.status, genre: result.genre, platform: result.platform }); }} />}
+      {selectedItem && <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onAdvance={() => { advanceItem(selectedItem); setSelectedItem(null); }} onFavorite={() => toggleFavorite(selectedItem)} isAuthenticated={isAuthenticated} onPlaytimeLogged={(minutes) => updateItem(selectedItem.id, { hours: selectedItem.hours + Math.round(minutes / 60), detail: `${selectedItem.hours + Math.round(minutes / 60)}h logged` })} />}
       {!isAuthenticated && <button className="account-pill" onClick={startLogin}><span className="account-dot" /> Sign in to sync</button>}
-      {isAuthenticated && <button className="account-pill" onClick={() => logout()}><span className="account-dot live" /> Sign out</button>}
+      {isAuthenticated && <><button className="account-pill" onClick={syncLibrary} title="Sync your library"><span className={`account-dot live ${syncing ? "pulse" : ""}`} /> {syncing ? "Syncing…" : "Sync library"}</button><button className="account-logout" onClick={() => logout()}>Sign out</button></>}
     </div>
   );
 }
@@ -372,10 +456,32 @@ function Insights({ stats, items }: { stats: TrackerStats; items: MediaItem[] })
   return <div className="page-stack"><section className="insights-intro"><div><span className="eyebrow accent-eyebrow"><BarChart3 size={13} /> Your year in stories</span><h2>Patterns worth <em>noticing.</em></h2><p>Small snapshots of how you spend your favorite hours.</p></div><div className="streak-badge"><Trophy size={20} /><div><strong>12 day</strong><span>tracking streak</span></div></div></section><section className="insights-grid"><div className="insight-card wide"><div className="insight-head"><div><span className="eyebrow">Monthly activity</span><h3>Your media rhythm</h3></div><span className="period-pill">This year <ChevronRight size={13} /></span></div><div className="bar-chart">{months.map((month) => <div className="bar-column" key={month.name}><div className="bar-value">{month.value}</div><div className="bar"><span style={{ height: `${month.value}%` }} /></div><small>{month.name}</small></div>)}</div><div className="chart-note"><span className="dot dot-purple" /> Items completed <strong>+24% from last year</strong></div></div><div className="insight-card"><div className="insight-head"><div><span className="eyebrow">Completion</span><h3>At a glance</h3></div><div className="ring-chart" style={{ background: `conic-gradient(#7358e8 ${stats.completion * 3.6}deg, #edeaf3 0)` }}><div><strong>{stats.completion}%</strong><span>complete</span></div></div></div><div className="completion-rows"><div><span><i className="dot dot-purple" /> Games</span><strong>{items.filter((item) => item.type === "Game" && item.status === "Completed").length} done</strong></div><div><span><i className="dot dot-pink" /> Series</span><strong>{items.filter((item) => item.type === "Series" && item.status === "Completed").length} done</strong></div></div></div><div className="insight-card"><div className="insight-head"><div><span className="eyebrow">Your taste</span><h3>Favorite genres</h3></div><Tag size={18} className="muted-icon" /></div><div className="genre-list">{genres.map((genre) => <div className="genre-row" key={genre.name}><div><span>{genre.name}</span><strong>{genre.value}%</strong></div><ProgressBar value={genre.value} color={genre.color} /></div>)}</div></div><div className="insight-card wide split-card"><div><span className="eyebrow">Time well spent</span><h3>You logged <em>{stats.hours} hours</em><br />with your stories.</h3><p>Your completed titles are getting more ambitious — nice.</p><button className="small-action">See activity <ArrowUpRight size={13} /></button></div><div className="insight-illustration"><Clock3 size={38} /><span>hours<br />logged</span></div></div></section></div>;
 }
 
-function AddModal({ value, setValue, onClose, onAdd }: { value: { title: string; type: MediaType; status: Status; genre: string; platform: string }; setValue: (value: { title: string; type: MediaType; status: Status; genre: string; platform: string }) => void; onClose: () => void; onAdd: () => void }) {
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="eyebrow accent-eyebrow"><CirclePlus size={13} /> New addition</span><h2>Add to your library</h2></div><button className="icon-button subtle" onClick={onClose}><X size={17} /></button></div><label>Title<input autoFocus value={value.title} onChange={(event) => setValue({ ...value, title: event.target.value })} placeholder="What are you making room for?" /></label><div className="form-two"><label>Type<select value={value.type} onChange={(event) => setValue({ ...value, type: event.target.value as MediaType, status: event.target.value === "Game" ? "Want to play" : "Want to watch" })}><option>Game</option><option>Series</option></select></label><label>Status<select value={value.status} onChange={(event) => setValue({ ...value, status: event.target.value as Status })}>{statusOptions.map((status) => <option key={status}>{status}</option>)}</select></label></div><div className="form-two"><label>Genre<input value={value.genre} onChange={(event) => setValue({ ...value, genre: event.target.value })} placeholder="Adventure" /></label><label>Platform<input value={value.platform} onChange={(event) => setValue({ ...value, platform: event.target.value })} placeholder={value.type === "Game" ? "PC, Switch..." : "Netflix, Max..."} /></label></div><div className="modal-actions"><button className="text-button" onClick={onClose}>Cancel</button><button className="dark-button" onClick={onAdd}>Add item <ArrowUpRight size={16} /></button></div></div></div>;
+function AddModal({ value, setValue, onClose, onAdd, metadataResults, metadataLoading, onSearchMetadata, onSelectMetadata }: { value: { title: string; type: MediaType; status: Status; genre: string; platform: string }; setValue: (value: { title: string; type: MediaType; status: Status; genre: string; platform: string }) => void; onClose: () => void; onAdd: () => void; metadataResults: MetadataResult[]; metadataLoading: boolean; onSearchMetadata: (query: string, type: MediaType) => void; onSelectMetadata: (result: MetadataResult) => void }) {
+  const [lookup, setLookup] = useState(value.title);
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card modal-card-wide" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="eyebrow accent-eyebrow"><CirclePlus size={13} /> New addition</span><h2>Add to your library</h2></div><button className="icon-button subtle" onClick={onClose}><X size={17} /></button></div><div className="metadata-search"><label>Find a title<input autoFocus value={lookup} onChange={(event) => { setLookup(event.target.value); setValue({ ...value, title: event.target.value }); }} onKeyDown={(event) => { if (event.key === "Enter" && lookup.trim().length > 1) onSearchMetadata(lookup.trim(), value.type); }} placeholder="Search a game, series, or movie" /></label><button className="small-search-button" disabled={metadataLoading || lookup.trim().length < 2} onClick={() => onSearchMetadata(lookup.trim(), value.type)}>{metadataLoading ? <Loader2 size={14} className="spin" /> : <Search size={14} />} Find</button></div>{metadataResults.length > 0 && <div className="metadata-results"><span className="eyebrow">Catalog matches</span>{metadataResults.map((result) => <button className="metadata-result" key={result.externalId} onClick={() => { onSelectMetadata(result); setLookup(result.title); }}><div className="metadata-thumb">{result.image ? <img src={result.image} alt="" /> : <Compass size={15} />}</div><span><strong>{result.title}</strong><small>{result.type} · {result.genre} · {result.platform}</small></span><ChevronRight size={14} className="muted-icon" /></button>)}</div>}<div className="form-two"><label>Type<select value={value.type} onChange={(event) => { const nextType = event.target.value as MediaType; setValue({ ...value, type: nextType, status: nextType === "Game" ? "Want to play" : "Want to watch" }); }}>{["Game", "Series", "Movie"].map((type) => <option key={type}>{type}</option>)}</select></label><label>Status<select value={value.status} onChange={(event) => setValue({ ...value, status: event.target.value as Status })}>{statusOptions.map((status) => <option key={status}>{status}</option>)}</select></label></div><div className="form-two"><label>Genre<input value={value.genre} onChange={(event) => setValue({ ...value, genre: event.target.value })} placeholder="Adventure" /></label><label>Platform<input value={value.platform} onChange={(event) => setValue({ ...value, platform: event.target.value })} placeholder={value.type === "Game" ? "PC, Switch..." : "Netflix, Max..."} /></label></div><div className="modal-actions"><button className="text-button" onClick={onClose}>Cancel</button><button className="dark-button" onClick={onAdd}>Add item <ArrowUpRight size={16} /></button></div></div></div>;
 }
 
-function DetailModal({ item, onClose, onAdvance, onFavorite }: { item: MediaItem; onClose: () => void; onAdvance: () => void; onFavorite: () => void }) {
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="detail-modal" onMouseDown={(event) => event.stopPropagation()}><div className="detail-hero"><Cover item={item} large /><div className="detail-hero-content"><div className="card-overline"><span>{item.type} · {item.genre}</span><button className={`heart-button ${item.favorite ? "liked" : ""}`} onClick={onFavorite}><Heart size={16} fill={item.favorite ? "currentColor" : "none"} /></button></div><h2>{item.title}</h2><p>{item.platform} <span>·</span> {item.lastActive}</p><div className="detail-rating">{item.rating > 0 ? <><Star size={15} fill="currentColor" /> {item.rating} personal rating</> : "Not rated yet"}</div></div><button className="detail-close" onClick={onClose}><X size={18} /></button></div><div className="detail-body"><div className="detail-stat"><span>Status</span><strong>{item.status}</strong></div><div className="detail-stat"><span>Progress</span><strong>{item.progress}%</strong></div><div className="detail-stat"><span>Time logged</span><strong>{item.hours} hours</strong></div><div className="detail-progress"><div className="progress-line"><ProgressBar value={item.progress} color={item.type === "Game" ? "#7358e8" : "#d986b3"} /><strong>{item.progress}%</strong></div><small>{item.detail}</small></div></div><div className="detail-actions"><button className="text-button" onClick={onClose}>Close</button><button className="dark-button" onClick={onAdvance}>{item.status === "Completed" ? "Move back to active" : "Update status"} <Check size={15} /></button></div></div></div>;
+function DetailModal({ item, onClose, onAdvance, onFavorite, isAuthenticated, onPlaytimeLogged }: { item: MediaItem; onClose: () => void; onAdvance: () => void; onFavorite: () => void; isAuthenticated: boolean; onPlaytimeLogged: (minutes: number) => void }) {
+  const episodeQuery = trpc.tracker.episodes.useQuery({ mediaItemId: item.id }, { enabled: isAuthenticated && item.type === "Series" && item.id < 1000000000000, retry: false });
+  const episodeMutation = trpc.tracker.toggleEpisode.useMutation();
+  const playMutation = trpc.tracker.logPlaytime.useMutation({ onSuccess: () => toast.success("Play session saved to your account") });
+  const [watchedEpisodes, setWatchedEpisodes] = useState<number[]>([]);
+  const [minutes, setMinutes] = useState("60");
+  const [note, setNote] = useState("");
+  useEffect(() => { if (episodeQuery.data) setWatchedEpisodes(episodeQuery.data.filter((episode) => Boolean(episode.watched)).map((episode) => episode.episodeNumber)); }, [episodeQuery.data]);
+  const episodeRows = Array.from({ length: 8 }, (_, index) => ({ number: index + 1, title: `Episode ${index + 1}` }));
+  const toggleEpisode = (episodeNumber: number) => {
+    const watched = !watchedEpisodes.includes(episodeNumber);
+    setWatchedEpisodes((current) => watched ? [...current, episodeNumber] : current.filter((value) => value !== episodeNumber));
+    if (isAuthenticated && item.id < 1000000000000) episodeMutation.mutate({ mediaItemId: item.id, seasonNumber: 2, episodeNumber, title: `Episode ${episodeNumber}`, watched });
+  };
+  const logPlaytime = () => {
+    const parsed = Math.max(1, Math.min(1440, Number(minutes) || 0));
+    if (!parsed) return;
+    onPlaytimeLogged(parsed);
+    if (isAuthenticated && item.id < 1000000000000) playMutation.mutate({ mediaItemId: item.id, startedAt: Date.now() - parsed * 60000, endedAt: Date.now(), minutes: parsed, note: note.trim() || undefined });
+    else toast.success("Play session added to this device");
+    setNote("");
+  };
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="detail-modal detail-modal-tall" onMouseDown={(event) => event.stopPropagation()}><div className="detail-hero"><Cover item={item} large /><div className="detail-hero-content"><div className="card-overline"><span>{item.type} · {item.genre}</span><button className={`heart-button ${item.favorite ? "liked" : ""}`} onClick={onFavorite}><Heart size={16} fill={item.favorite ? "currentColor" : "none"} /></button></div><h2>{item.title}</h2><p>{item.platform} <span>·</span> {item.lastActive}</p><div className="detail-rating">{item.rating > 0 ? <><Star size={15} fill="currentColor" /> {item.rating} personal rating</> : "Not rated yet"}</div></div><button className="detail-close" onClick={onClose}><X size={18} /></button></div><div className="detail-body"><div className="detail-stat"><span>Status</span><strong>{item.status}</strong></div><div className="detail-stat"><span>Progress</span><strong>{item.progress}%</strong></div><div className="detail-stat"><span>Time logged</span><strong>{item.hours} hours</strong></div><div className="detail-progress"><div className="progress-line"><ProgressBar value={item.progress} color={item.type === "Game" ? "#7358e8" : "#d986b3"} /><strong>{item.progress}%</strong></div><small>{item.detail}</small></div></div>{item.type === "Series" ? <section className="episode-panel"><div className="episode-panel-head"><div><span className="eyebrow"><ListChecks size={13} /> Episode tracker</span><strong>Season 2</strong></div><span>{watchedEpisodes.length} / {episodeRows.length} watched</span></div><div className="episode-list">{episodeRows.map((episode) => <button className={`episode-row ${watchedEpisodes.includes(episode.number) ? "watched" : ""}`} key={episode.number} onClick={() => toggleEpisode(episode.number)}><span className="episode-check">{watchedEpisodes.includes(episode.number) && <Check size={12} />}</span><span><strong>{episode.title}</strong><small>Season 2 · Episode {episode.number}</small></span><ChevronRight size={14} className="muted-icon" /></button>)}</div></section> : <section className="playtime-panel"><div><span className="eyebrow"><Timer size={13} /> Playtime log</span><strong>Capture a session</strong></div><div className="playtime-form"><label>Minutes<input type="number" min="1" max="1440" value={minutes} onChange={(event) => setMinutes(event.target.value)} /></label><label>Note<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional note" /></label><button className="small-search-button" onClick={logPlaytime} disabled={playMutation.isPending}>{playMutation.isPending ? <Loader2 size={14} className="spin" /> : <Clock3 size={14} />} Log session</button></div></section>}<div className="detail-actions"><button className="text-button" onClick={onClose}>Close</button><button className="dark-button" onClick={onAdvance}>{item.status === "Completed" ? "Move back to active" : "Update status"} <Check size={15} /></button></div></div></div>;
 }
