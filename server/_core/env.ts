@@ -8,4 +8,6 @@ export const ENV = {
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   rawgApiKey: process.env.RAWG_API_KEY ?? "",
+  tmdbApiKey: process.env.TMDB_API_KEY ?? "",
+  tmdbReadAccessToken: process.env.TMDB_READ_ACCESS_TOKEN ?? "",
 };
