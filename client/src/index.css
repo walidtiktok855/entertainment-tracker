@@ -180,3 +180,17 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .metadata-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }.metadata-detail-head small { color: #a39daa; font: 8px 'DM Mono', monospace; }
 .metadata-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }.metadata-detail-grid span { min-width: 0; }.metadata-detail-grid strong, .metadata-detail-grid small { display: block; }.metadata-detail-grid strong { color: #77717d; font-size: 8px; font-weight: 500; }.metadata-detail-grid small { overflow: hidden; color: #37333f; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; }
 .metadata-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 11px; }.metadata-tags span { color: #6b59ae; border-radius: 99px; padding: 4px 7px; background: #eeeafd; font-size: 8px; }
+
+.metadata-extras { margin: 0 20px 16px; padding: 14px; border: 1px solid #ece8f5; border-radius: 14px; background: #fff; display: grid; gap: 14px; }
+.metadata-overview { margin: 0; color: #625e70; font-size: 13px; line-height: 1.55; }
+.cast-row, .screenshot-strip, .trailer-links { display: grid; gap: 8px; }
+.cast-row > div, .screenshot-strip > div, .trailer-links > div { display: flex; gap: 8px; overflow-x: auto; }
+.cast-chip { min-width: 112px; padding: 8px 10px; border-radius: 10px; background: #f7f4fc; display: grid; gap: 2px; }
+.cast-chip strong { font-size: 12px; color: #292533; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cast-chip small { font-size: 10px; color: #8a8398; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.screenshot-strip img { width: 148px; height: 84px; border-radius: 10px; object-fit: cover; background: #eeeaf5; flex: 0 0 auto; }
+.trailer-links a { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 9px; color: #7358e8; background: #f0ebff; font-size: 11px; text-decoration: none; white-space: nowrap; }
+.season-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.season-nav select { max-width: 230px; padding: 8px 10px; border: 1px solid #e7e0f2; border-radius: 9px; background: #faf9fd; color: #3f394d; font-size: 12px; }
+.refresh-action { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+@media (max-width: 720px) { .metadata-extras { margin-inline: 12px; } .season-nav { align-items: flex-start; flex-direction: column; } .season-nav select { max-width: none; width: 100%; } }

@@ -24,6 +24,42 @@ async function tmdbRequest(path: string, query: Record<string, string> = {}) {
   return response.json();
 }
 
+async function rawgRequest(path: string, query: Record<string, string> = {}) {
+  if (!ENV.rawgApiKey) throw new Error("RAWG is not configured");
+  const url = new URL(`https://api.rawg.io/api${path}`);
+  url.searchParams.set("key", ENV.rawgApiKey);
+  Object.entries(query).forEach(([key, value]) => url.searchParams.set(key, value));
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`RAWG returned ${response.status}`);
+  return response.json();
+}
+
+async function getMetadataDetail(externalId: string) {
+  if (externalId.startsWith("rawg:")) {
+    const id = externalId.split(":").pop() ?? "";
+    const entry = await rawgRequest(`/games/${id}`);
+    const platforms = (entry.platforms ?? []).map((value: any) => value.platform?.name).filter(Boolean).slice(0, 8);
+    const genres = (entry.genres ?? []).map((value: any) => value.name).filter(Boolean).slice(0, 6);
+    const metadata = { source: "RAWG", id: entry.id, slug: entry.slug, released: entry.released, rating: entry.rating, ratingsCount: entry.ratings_count, metacritic: entry.metacritic, description: entry.description_raw ?? entry.description ?? "", platforms, genres, tags: (entry.tags ?? []).slice(0, 12).map((value: any) => value.name), stores: (entry.stores ?? []).slice(0, 8).map((value: any) => value.store?.name), developers: (entry.developers ?? []).map((value: any) => value.name).filter(Boolean).slice(0, 6), publishers: (entry.publishers ?? []).map((value: any) => value.name).filter(Boolean).slice(0, 6), screenshots: (entry.short_screenshots ?? []).map((value: any) => value.image).filter(Boolean).slice(0, 10), trailer: entry.clip?.clip ?? "" };
+    return { title: entry.name ?? "Untitled", type: "Game" as const, genre: genres.join(", ") || "Game", platform: platforms.join(", ") || "Game library", image: entry.background_image ?? "", detail: [entry.released ? `Released ${entry.released.slice(0, 4)}` : "Release date unknown", entry.rating ? `${entry.rating.toFixed(1)}/5 RAWG` : ""].filter(Boolean).join(" · "), metadataJson: JSON.stringify(metadata) };
+  }
+  if (externalId.startsWith("tmdb:movie:")) {
+    const id = externalId.split(":").pop() ?? "";
+    const entry = await tmdbRequest(`/movie/${id}`, { language: "en-US", append_to_response: "credits,videos" });
+    const genres = (entry.genres ?? []).map((value: any) => value.name).filter(Boolean).slice(0, 6);
+    const metadata = { source: "TMDB", mediaType: "movie", id: entry.id, releaseDate: entry.release_date, voteAverage: entry.vote_average, voteCount: entry.vote_count, overview: entry.overview, originalLanguage: entry.original_language, runtime: entry.runtime, genres, cast: (entry.credits?.cast ?? []).slice(0, 12).map((value: any) => ({ name: value.name, character: value.character, image: value.profile_path ? `https://image.tmdb.org/t/p/w185${value.profile_path}` : "" })), trailers: (entry.videos?.results ?? []).filter((value: any) => value.site === "YouTube").slice(0, 5).map((value: any) => ({ name: value.name, key: value.key, type: value.type })) };
+    return { title: entry.title ?? "Untitled", type: "Movie" as const, genre: genres.join(", ") || "Movie", platform: "TMDB", image: entry.poster_path ? `https://image.tmdb.org/t/p/w500${entry.poster_path}` : "", detail: [entry.release_date ? `Released ${entry.release_date.slice(0, 4)}` : "", entry.runtime ? `${entry.runtime} min` : "", entry.vote_average ? `${entry.vote_average.toFixed(1)}/10 TMDB` : ""].filter(Boolean).join(" · "), metadataJson: JSON.stringify(metadata) };
+  }
+  if (externalId.startsWith("tmdb:tv:")) {
+    const id = externalId.split(":").pop() ?? "";
+    const entry = await tmdbRequest(`/tv/${id}`, { language: "en-US", append_to_response: "credits,videos" });
+    const genres = (entry.genres ?? []).map((value: any) => value.name).filter(Boolean).slice(0, 6);
+    const metadata = { source: "TMDB", mediaType: "tv", id: entry.id, firstAirDate: entry.first_air_date, voteAverage: entry.vote_average, voteCount: entry.vote_count, overview: entry.overview, originalLanguage: entry.original_language, runtime: entry.episode_run_time?.[0] ?? null, numberOfSeasons: entry.number_of_seasons, numberOfEpisodes: entry.number_of_episodes, seasons: (entry.seasons ?? []).filter((value: any) => value.season_number > 0).map((value: any) => ({ seasonNumber: value.season_number, name: value.name, episodeCount: value.episode_count, airDate: value.air_date, image: value.poster_path ? `https://image.tmdb.org/t/p/w342${value.poster_path}` : "" })), cast: (entry.credits?.cast ?? []).slice(0, 12).map((value: any) => ({ name: value.name, character: value.character, image: value.profile_path ? `https://image.tmdb.org/t/p/w185${value.profile_path}` : "" })), trailers: (entry.videos?.results ?? []).filter((value: any) => value.site === "YouTube").slice(0, 5).map((value: any) => ({ name: value.name, key: value.key, type: value.type })) };
+    return { title: entry.name ?? "Untitled", type: "Series" as const, genre: genres.join(", ") || "Series", platform: "TMDB", image: entry.poster_path ? `https://image.tmdb.org/t/p/w500${entry.poster_path}` : "", detail: [entry.first_air_date ? `First aired ${entry.first_air_date.slice(0, 4)}` : "", entry.number_of_seasons ? `${entry.number_of_seasons} seasons` : "", entry.vote_average ? `${entry.vote_average.toFixed(1)}/10 TMDB` : ""].filter(Boolean).join(" · "), metadataJson: JSON.stringify(metadata) };
+  }
+  return null;
+}
+
 function normalizeSearchItems(payload: any, type: "Game" | "Series" | "Movie") {
   if (type === "Series" && Array.isArray(payload?.results)) return payload.results.slice(0, 8).map((entry: any) => {
     const genres = (entry.genre_ids ?? []).map((id: number) => tmdbGenres[id]).filter(Boolean).slice(0, 3);
@@ -57,6 +93,23 @@ export const appRouter = router({
     list: protectedProcedure.query(({ ctx }) => getMediaForUser(ctx.user.id)),
     sync: protectedProcedure.input(z.object({ items: z.array(mediaInput) })).mutation(async ({ ctx, input }) => { for (const item of input.items) await upsertMediaForUser(ctx.user.id, { ...item, favorite: item.favorite ? 1 : 0 }); return getMediaForUser(ctx.user.id); }),
     update: protectedProcedure.input(z.object({ id: z.number().int(), patch: mediaInput.partial() })).mutation(({ ctx, input }) => updateMediaForUser(ctx.user.id, input.id, { ...input.patch, favorite: input.patch.favorite === undefined ? undefined : input.patch.favorite ? 1 : 0 })),
+    detail: publicProcedure.input(z.object({ externalId: z.string().min(3) })).query(async ({ input }) => getMetadataDetail(input.externalId)),
+    refresh: protectedProcedure.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      const items = await getMediaForUser(ctx.user.id);
+      const item = items.find((value) => value.id === input.id);
+      if (!item?.externalId) return item;
+      const detail = await getMetadataDetail(item.externalId);
+      if (!detail) return item;
+      await updateMediaForUser(ctx.user.id, item.id, detail);
+      return (await getMediaForUser(ctx.user.id)).find((value) => value.id === item.id);
+    }),
+    refreshAll: protectedProcedure.mutation(async ({ ctx }) => {
+      const items = await getMediaForUser(ctx.user.id);
+      for (const item of items.filter((value) => value.externalId?.startsWith("rawg:") || value.externalId?.startsWith("tmdb:"))) {
+        try { const detail = await getMetadataDetail(item.externalId!); if (detail) await updateMediaForUser(ctx.user.id, item.id, detail); } catch (error) { console.warn("[Metadata] Refresh failed", item.externalId, error); }
+      }
+      return getMediaForUser(ctx.user.id);
+    }),
     search: publicProcedure.input(z.object({ query: z.string().min(2), type: z.enum(["Game", "Series", "Movie"]) })).query(async ({ input }) => {
       try {
         if (input.type === "Series" && (ENV.tmdbReadAccessToken || ENV.tmdbApiKey)) return normalizeSearchItems(await tmdbRequest("/search/tv", { query: input.query, include_adult: "false", language: "en-US" }), input.type);
@@ -83,6 +136,10 @@ export const appRouter = router({
         const seasonDetails = await Promise.all(seasons.map((season: any) => tmdbRequest(`/tv/${showId}/season/${season.season_number}`, { language: "en-US" })));
         return seasonDetails.flatMap((season: any) => (season.episodes ?? []).map((episode: any) => ({ seasonNumber: episode.season_number, episodeNumber: episode.episode_number, title: episode.name ?? `Episode ${episode.episode_number}`, airDate: episode.air_date ?? null, runtime: episode.runtime ?? null, overview: episode.overview ?? "", image: episode.still_path ? `https://image.tmdb.org/t/p/w300${episode.still_path}` : "" })));
       } catch (error) { console.warn("[Metadata] Episode catalog failed", error); return []; }
+    }),
+    seasonEpisodes: publicProcedure.input(z.object({ externalId: z.string().regex(/^tmdb:tv:\d+$/), seasonNumber: z.number().int().min(1).max(50) })).query(async ({ input }) => {
+      if (!ENV.tmdbReadAccessToken && !ENV.tmdbApiKey) return [];
+      try { const showId = input.externalId.split(":").pop() ?? ""; const season = await tmdbRequest(`/tv/${showId}/season/${input.seasonNumber}`, { language: "en-US" }); return (season.episodes ?? []).map((episode: any) => ({ seasonNumber: episode.season_number, episodeNumber: episode.episode_number, title: episode.name ?? `Episode ${episode.episode_number}`, airDate: episode.air_date ?? null, runtime: episode.runtime ?? null, overview: episode.overview ?? "", image: episode.still_path ? `https://image.tmdb.org/t/p/w300${episode.still_path}` : "" })); } catch (error) { console.warn("[Metadata] Season fetch failed", error); return []; }
     }),
     episodes: protectedProcedure.input(z.object({ mediaItemId: z.number().int() })).query(({ ctx, input }) => getEpisodesForUser(ctx.user.id, input.mediaItemId)),
     toggleEpisode: protectedProcedure.input(z.object({ mediaItemId: z.number().int(), seasonNumber: z.number().int().min(1), episodeNumber: z.number().int().min(1), title: z.string().optional(), watched: z.boolean() })).mutation(({ ctx, input }) => toggleEpisodeForUser(ctx.user.id, input)),

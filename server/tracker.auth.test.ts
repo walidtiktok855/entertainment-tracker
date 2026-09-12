@@ -21,4 +21,10 @@ describe("tracker authorization", () => {
     await expect(caller.tracker.toggleEpisode({ mediaItemId: 1, seasonNumber: 1, episodeNumber: 1, watched: true })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     await expect(caller.tracker.logPlaytime({ mediaItemId: 1, startedAt: Date.now(), minutes: 45 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
+
+  it("protects metadata refresh mutations", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+    await expect(caller.tracker.refreshAll()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.tracker.refresh({ id: 1 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
 });

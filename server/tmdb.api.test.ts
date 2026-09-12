@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { appRouter } from "./routers";
+import type { TrpcContext } from "./_core/context";
+
+const publicContext: TrpcContext = { user: null, req: { protocol: "https", headers: {} } as TrpcContext["req"], res: { clearCookie: () => undefined } as TrpcContext["res"] };
 
 describe("TMDB credentials", () => {
   it("authenticates against the lightweight configuration endpoint", async () => {
@@ -32,5 +36,14 @@ describe("TMDB credentials", () => {
     expect(season).toBeTypeOf("number");
     const seasonResponse = await fetch(`https://api.themoviedb.org/3/tv/${showId}/season/${season}?language=en-US`, { headers });
     expect(seasonResponse.ok).toBe(true);
+  }, 20000);
+
+  it("normalizes full TMDB series details for the app", async () => {
+    const caller = appRouter.createCaller(publicContext);
+    const detail = await caller.tracker.detail({ externalId: "tmdb:tv:100088" });
+    expect(detail?.metadataJson).toBeTruthy();
+    const metadata = JSON.parse(detail!.metadataJson!);
+    expect(metadata.seasons.length).toBeGreaterThan(0);
+    expect(metadata.cast.length).toBeGreaterThan(0);
   }, 20000);
 });

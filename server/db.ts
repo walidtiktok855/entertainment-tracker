@@ -39,6 +39,13 @@ export async function getMediaForUser(userId: number) {
   return db.select().from(mediaItems).where(eq(mediaItems.userId, userId)).orderBy(desc(mediaItems.updatedAt));
 }
 
+export async function getMediaByIdForUser(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(mediaItems).where(and(eq(mediaItems.userId, userId), eq(mediaItems.id, id))).limit(1);
+  return rows[0];
+}
+
 export async function upsertMediaForUser(userId: number, item: Omit<InsertMediaItem, "userId" | "id" | "createdAt" | "updatedAt">) {
   const db = await getDb();
   if (!db) return undefined;
