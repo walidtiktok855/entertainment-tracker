@@ -10,15 +10,21 @@ export const users = mysqlTable("users", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  cemeteryDefaultCategory: varchar("cemeteryDefaultCategory", { length: 32 }),
 });
 
-export const mediaItems = mysqlTable("mediaItems", {
+export const items = mysqlTable("items", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   externalId: varchar("externalId", { length: 128 }),
-  title: varchar("title", { length: 255 }).notNull(),
-  type: mysqlEnum("type", ["Game", "Series", "Movie"]).notNull(),
-  status: varchar("status", { length: 40 }).notNull(),
+  title: varchar("title", { length: 255 }),
+  type: mysqlEnum("type", ["Game", "Series", "Movie"]),
+  category: mysqlEnum("category", ["Movie", "Game", "Software", "Study", "Other"]),
+  note: text("note"),
+  sourceLink: text("sourceLink"),
+  stage: mysqlEnum("stage", ["inbox", "library"]).default("library").notNull(),
+  scheduledDate: timestamp("scheduledDate"),
+  status: varchar("status", { length: 40 }),
   genre: varchar("genre", { length: 120 }),
   platform: varchar("platform", { length: 120 }),
   progress: int("progress").default(0).notNull(),
@@ -56,7 +62,9 @@ export const playSessions = mysqlTable("playSessions", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
-export type MediaItem = typeof mediaItems.$inferSelect;
-export type InsertMediaItem = typeof mediaItems.$inferInsert;
+export type MediaItem = typeof items.$inferSelect;
+export type InsertMediaItem = typeof items.$inferInsert;
+export type Item = typeof items.$inferSelect;
+export type InsertItem = typeof items.$inferInsert;
 export type EpisodeProgress = typeof episodeProgress.$inferSelect;
 export type PlaySession = typeof playSessions.$inferSelect;

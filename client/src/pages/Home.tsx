@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Archive,
+  Camera,
   ArrowDown,
   ArrowUpRight,
   BarChart3,
@@ -18,6 +19,7 @@ import {
   Compass,
   Gamepad2,
   Heart,
+  Link2,
   ListChecks,
   Loader2,
   LayoutDashboard,
@@ -42,7 +44,8 @@ import { trpc } from "@/lib/trpc";
 
 type MediaType = "Game" | "Series" | "Movie";
 type Status = "Playing" | "Watching" | "Want to play" | "Want to watch" | "Completed" | "Paused";
-type Page = "dashboard" | "library" | "calendar" | "insights";
+type Page = "dashboard" | "library" | "cemetery" | "calendar" | "insights";
+type CemeteryCategory = "Movie" | "Game" | "Software" | "Study" | "Other";
 
 type MediaItem = {
   id: number;
@@ -62,6 +65,8 @@ type MediaItem = {
   externalId?: string;
   metadataJson?: string;
 };
+
+type CemeteryItem = { id: number; title: string; category: CemeteryCategory | null; note: string | null; sourceLink: string | null; createdAt?: string; stage?: "inbox" | "library" };
 
 type MetadataResult = { externalId: string; title: string; type: MediaType; genre: string; platform: string; image: string; detail: string; status: Status; metadataJson?: string };
 type NewItem = { title: string; type: MediaType; status: Status; genre: string; platform: string; externalId?: string; image?: string; detail?: string; metadataJson?: string };
@@ -286,12 +291,17 @@ export default function Home() {
   const { user, isAuthenticated, logout } = useAuth();
   const utils = trpc.useUtils();
   const syncedLibrary = trpc.tracker.list.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const cemeteryQuery = trpc.tracker.cemetery.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const cemeteryDefaultQuery = trpc.tracker.cemeteryDefault.useQuery(undefined, { enabled: isAuthenticated, retry: false });
   const syncMutation = trpc.tracker.sync.useMutation({ onSuccess: (serverItems) => { setItems(serverItems.map(fromServerItem)); toast.success("Library synced to your account"); } });
   const refreshAllMutation = trpc.tracker.refreshAll.useMutation({ onSuccess: (serverItems) => { setItems(serverItems.map(fromServerItem)); toast.success("Metadata refreshed"); } });
   const updateMutation = trpc.tracker.update.useMutation();
+  const quickAddMutation = trpc.tracker.quickAdd.useMutation({ onSuccess: () => { cemeteryQuery.refetch(); toast.success("Saved to Screenshot Cemetery"); } });
+  const promoteMutation = trpc.tracker.promote.useMutation({ onSuccess: async () => { await Promise.all([cemeteryQuery.refetch(), syncedLibrary.refetch()]); toast.success("Added to your library"); } });
+  const defaultCategoryMutation = trpc.tracker.setCemeteryDefault.useMutation();
   const [metadataQuery, setMetadataQuery] = useState({ query: "__disabled__", type: "Game" as MediaType });
   const metadataSearch = trpc.tracker.search.useQuery(metadataQuery, { enabled: false, retry: false });
-  const [page, setPage] = useState<Page>("dashboard");
+  const [page, setPage] = useState<Page>(() => window.location.pathname === "/quick-add" ? "cemetery" : "dashboard");
   const [items, setItems] = useState<MediaItem[]>(() => {
     try {
       const saved = localStorage.getItem("luma-entertainment-items");
@@ -303,6 +313,11 @@ export default function Home() {
   const [activeType, setActiveType] = useState<"All" | MediaType>("All");
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [promotingItem, setPromotingItem] = useState<CemeteryItem | null>(null);
+  const [showQuickAdd, setShowQuickAdd] = useState(() => window.location.pathname === "/quick-add");
+  const [shareLink, setShareLink] = useState(() => { const params = new URLSearchParams(window.location.search); return params.get("url") ?? params.get("text") ?? ""; });
+  const [cemeteryCategory, setCemeteryCategory] = useState<CemeteryCategory | null>(null);
+  const [cemeteryDefault, setCemeteryDefault] = useState<CemeteryCategory | null>(null);
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
   const [monthOffset, setMonthOffset] = useState(0);
   const [newItem, setNewItem] = useState<NewItem>({ title: "", type: "Game", status: "Want to play", genre: "Adventure", platform: "" });
@@ -312,6 +327,14 @@ export default function Home() {
   useEffect(() => {
     if (isAuthenticated && syncedLibrary.data && syncedLibrary.data.length > 0) setItems(syncedLibrary.data.map(fromServerItem));
   }, [isAuthenticated, syncedLibrary.data]);
+
+  useEffect(() => {
+    if (cemeteryDefaultQuery.data !== undefined) { setCemeteryDefault((cemeteryDefaultQuery.data as CemeteryCategory | null)); setCemeteryCategory((cemeteryDefaultQuery.data as CemeteryCategory | null)); }
+  }, [cemeteryDefaultQuery.data]);
+
+  useEffect(() => {
+    if (window.location.pathname === "/quick-add") setShowQuickAdd(true);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("luma-entertainment-items", JSON.stringify(items));
@@ -369,6 +392,12 @@ export default function Home() {
   };
 
   const addItem = () => {
+    if (promotingItem) {
+      promoteMutation.mutate({ id: promotingItem.id, item: { ...newItem, title: newItem.title.trim() || promotingItem.title || "Untitled", favorite: false } });
+      setShowAdd(false);
+      setPromotingItem(null);
+      return;
+    }
     if (!newItem.title.trim()) {
       toast.error("Give your item a title first");
       return;
@@ -408,7 +437,15 @@ export default function Home() {
     return day > 0 && day <= daysInMonth ? day : null;
   });
 
-  const pageTitle = page === "dashboard" ? "Overview" : page === "library" ? "My library" : page === "calendar" ? "Calendar" : "Insights";
+  const pageTitle = page === "dashboard" ? "Overview" : page === "library" ? "My library" : page === "cemetery" ? "Screenshot Cemetery" : page === "calendar" ? "Calendar" : "Insights";
+
+  const cemeteryItems = ((cemeteryQuery.data ?? []) as any[]).map((item) => ({ id: item.id, title: item.title ?? "", category: item.category ?? null, note: item.note ?? null, sourceLink: item.sourceLink ?? null, createdAt: item.createdAt, stage: item.stage } as CemeteryItem));
+  const saveQuickAdd = async (payload: { title: string; category: CemeteryCategory | null; note: string; sourceLink: string }) => {
+    if (!isAuthenticated) { startLogin(); return; }
+    await quickAddMutation.mutateAsync(payload);
+    setShowQuickAdd(false);
+    setPage("cemetery");
+  };
 
   return (
     <div className="app-shell">
@@ -418,20 +455,22 @@ export default function Home() {
         <div className="sidebar-label">Workspace</div>
         <nav className="nav-list">{navItems.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? "active" : ""}`} onClick={() => setPage(id)}><Icon size={17} /><span>{label}</span>{id === "library" && <em>{items.length}</em>}</button>)}</nav>
         <div className="sidebar-label sidebar-label-spaced">Collections</div>
-        <nav className="nav-list"><button className="nav-item" onClick={() => { setPage("library"); setActiveType("Game"); }}><Gamepad2 size={17} /><span>Games</span><em>{items.filter((item) => item.type === "Game").length}</em></button><button className="nav-item" onClick={() => { setPage("library"); setActiveType("Series"); }}><Clapperboard size={17} /><span>Series</span><em>{items.filter((item) => item.type === "Series").length}</em></button><button className="nav-item" onClick={() => { setPage("library"); setSearch("favorites"); }}><Heart size={17} /><span>Favorites</span></button></nav>
+        <nav className="nav-list"><button className="nav-item" onClick={() => { setPage("library"); setActiveType("Game"); }}><Gamepad2 size={17} /><span>Games</span><em>{items.filter((item) => item.type === "Game").length}</em></button><button className="nav-item" onClick={() => { setPage("library"); setActiveType("Series"); }}><Clapperboard size={17} /><span>Series</span><em>{items.filter((item) => item.type === "Series").length}</em></button><button className={`nav-item ${page === "cemetery" ? "active" : ""}`} onClick={() => setPage("cemetery")}><Camera size={17} /><span>Screenshot Cemetery</span><em>{cemeteryItems.length}</em></button><button className="nav-item" onClick={() => { setPage("library"); setSearch("favorites"); }}><Heart size={17} /><span>Favorites</span></button></nav>
         <div className="sidebar-bottom"><div className="mini-goal"><div className="mini-goal-head"><span>June goal</span><strong>7 / 10</strong></div><ProgressBar value={70} color="#e3a6c8" /><span className="mini-goal-caption">3 more completions to go</span></div><button className="nav-item"><Settings2 size={17} /><span>Settings</span></button><div className="made-with"><span className="made-dot" /> Made for slow media days</div></div>
       </aside>
 
       <main className="main-content">
-        <header className="topbar"><div><span className="eyebrow">{formatDate()}</span><h1>{pageTitle}</h1></div><div className="topbar-actions"><button className="icon-button" aria-label="Notifications"><Bell size={18} /><i /></button><div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search your library" /><kbd><Command size={11} /> K</kbd></div><button className="primary-button" onClick={() => setShowAdd(true)}><Plus size={17} /> Add item</button></div></header>
+        <header className="topbar"><div><span className="eyebrow">{formatDate()}</span><h1>{pageTitle}</h1></div><div className="topbar-actions"><button className="icon-button" aria-label="Notifications"><Bell size={18} /><i /></button><div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search your library" /><kbd><Command size={11} /> K</kbd></div><button className="secondary-button" onClick={() => setShowQuickAdd(true)}><Camera size={16} /> Quick Add</button><button className="primary-button" onClick={() => setShowAdd(true)}><Plus size={17} /> Add item</button></div></header>
 
         {page === "dashboard" && <Dashboard stats={stats} items={items} setPage={setPage} activeType={activeType} setActiveType={setActiveType} advanceItem={advanceItem} toggleFavorite={toggleFavorite} setSelectedItem={setSelectedItem} />}
         {page === "library" && <Library items={filteredItems} activeType={activeType} setActiveType={setActiveType} search={search} setSearch={setSearch} advanceItem={advanceItem} toggleFavorite={toggleFavorite} setSelectedItem={setSelectedItem} onRefreshMetadata={refreshAllMetadata} refreshing={refreshing} />}
+        {page === "cemetery" && <Cemetery items={cemeteryItems} onQuickAdd={() => setShowQuickAdd(true)} onPromote={(item) => { const type = item.category === "Game" ? "Game" : item.category === "Movie" ? "Movie" : "Game"; setPromotingItem(item); setNewItem({ title: item.title, type, status: type === "Game" ? "Want to play" : "Want to watch", genre: item.category ?? "Adventure", platform: "", externalId: undefined, image: undefined, detail: item.note ?? undefined, metadataJson: undefined }); if (item.title.trim().length > 1 && (item.category === "Game" || item.category === "Movie")) setMetadataQuery({ query: item.title.trim(), type }); setShowAdd(true); }} />}
         {page === "calendar" && <CalendarPage monthName={monthName} monthOffset={monthOffset} setMonthOffset={setMonthOffset} calendarCells={calendarCells} items={items} setSelectedItem={setSelectedItem} />}
         {page === "insights" && <Insights stats={stats} items={items} />}
       </main>
 
-      {showAdd && <AddModal value={newItem} setValue={setNewItem} onClose={() => setShowAdd(false)} onAdd={addItem} metadataResults={(metadataSearch.data as MetadataResult[] | undefined) ?? []} metadataLoading={metadataSearch.isFetching} onSearchMetadata={(query, type) => setMetadataQuery({ query, type })} onSelectMetadata={(result: MetadataResult) => { setNewItem({ ...newItem, title: result.title, type: result.type, status: result.status, genre: result.genre, platform: result.platform, externalId: result.externalId, image: result.image, detail: result.detail, metadataJson: result.metadataJson }); }} />}
+      {showAdd && <AddModal value={newItem} setValue={setNewItem} onClose={() => { setShowAdd(false); setPromotingItem(null); }} onAdd={addItem} metadataResults={(metadataSearch.data as MetadataResult[] | undefined) ?? []} metadataLoading={metadataSearch.isFetching} onSearchMetadata={(query, type) => setMetadataQuery({ query, type })} onSelectMetadata={(result: MetadataResult) => { setNewItem({ ...newItem, title: result.title, type: result.type, status: result.status, genre: result.genre, platform: result.platform, externalId: result.externalId, image: result.image, detail: result.detail, metadataJson: result.metadataJson }); }} />}
+      {showQuickAdd && <QuickAddModal link={shareLink} defaultCategory={cemeteryCategory} onClose={() => setShowQuickAdd(false)} onSave={saveQuickAdd} onSetDefault={(category) => { setCemeteryCategory(category); setCemeteryDefault(category); if (isAuthenticated) defaultCategoryMutation.mutate({ category }); }} saving={quickAddMutation.isPending} />}
       {selectedItem && <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onAdvance={() => { advanceItem(selectedItem); setSelectedItem(null); }} onFavorite={() => toggleFavorite(selectedItem)} isAuthenticated={isAuthenticated} onPlaytimeLogged={(minutes) => updateItem(selectedItem.id, { hours: selectedItem.hours + Math.round(minutes / 60), detail: `${selectedItem.hours + Math.round(minutes / 60)}h logged` })} />}
       {!isAuthenticated && <button className="account-pill" onClick={startLogin}><span className="account-dot" /> Sign in to sync</button>}
       {isAuthenticated && <><button className="account-pill" onClick={syncLibrary} title="Sync your library"><span className={`account-dot live ${syncing ? "pulse" : ""}`} /> {syncing ? "Syncing…" : "Sync library"}</button><button className="account-logout" onClick={() => logout()}>Sign out</button></>}
@@ -470,6 +509,22 @@ function Insights({ stats, items }: { stats: TrackerStats; items: MediaItem[] })
   const genres = [{ name: "Adventure", value: 86, color: "#7358e8" }, { name: "Drama", value: 71, color: "#d986b3" }, { name: "RPG", value: 58, color: "#7dc8bf" }, { name: "Comedy", value: 43, color: "#e5b566" }];
   const months = [{ name: "Jan", value: 25 }, { name: "Feb", value: 39 }, { name: "Mar", value: 31 }, { name: "Apr", value: 64 }, { name: "May", value: 48 }, { name: "Jun", value: 78 }];
   return <div className="page-stack"><section className="insights-intro"><div><span className="eyebrow accent-eyebrow"><BarChart3 size={13} /> Your year in stories</span><h2>Patterns worth <em>noticing.</em></h2><p>Small snapshots of how you spend your favorite hours.</p></div><div className="streak-badge"><Trophy size={20} /><div><strong>12 day</strong><span>tracking streak</span></div></div></section><section className="insights-grid"><div className="insight-card wide"><div className="insight-head"><div><span className="eyebrow">Monthly activity</span><h3>Your media rhythm</h3></div><span className="period-pill">This year <ChevronRight size={13} /></span></div><div className="bar-chart">{months.map((month) => <div className="bar-column" key={month.name}><div className="bar-value">{month.value}</div><div className="bar"><span style={{ height: `${month.value}%` }} /></div><small>{month.name}</small></div>)}</div><div className="chart-note"><span className="dot dot-purple" /> Items completed <strong>+24% from last year</strong></div></div><div className="insight-card"><div className="insight-head"><div><span className="eyebrow">Completion</span><h3>At a glance</h3></div><div className="ring-chart" style={{ background: `conic-gradient(#7358e8 ${stats.completion * 3.6}deg, #edeaf3 0)` }}><div><strong>{stats.completion}%</strong><span>complete</span></div></div></div><div className="completion-rows"><div><span><i className="dot dot-purple" /> Games</span><strong>{items.filter((item) => item.type === "Game" && item.status === "Completed").length} done</strong></div><div><span><i className="dot dot-pink" /> Series</span><strong>{items.filter((item) => item.type === "Series" && item.status === "Completed").length} done</strong></div></div></div><div className="insight-card"><div className="insight-head"><div><span className="eyebrow">Your taste</span><h3>Favorite genres</h3></div><Tag size={18} className="muted-icon" /></div><div className="genre-list">{genres.map((genre) => <div className="genre-row" key={genre.name}><div><span>{genre.name}</span><strong>{genre.value}%</strong></div><ProgressBar value={genre.value} color={genre.color} /></div>)}</div></div><div className="insight-card wide split-card"><div><span className="eyebrow">Time well spent</span><h3>You logged <em>{stats.hours} hours</em><br />with your stories.</h3><p>Your completed titles are getting more ambitious — nice.</p><button className="small-action">See activity <ArrowUpRight size={13} /></button></div><div className="insight-illustration"><Clock3 size={38} /><span>hours<br />logged</span></div></div></section></div>;
+}
+
+function Cemetery({ items, onQuickAdd, onPromote }: { items: CemeteryItem[]; onQuickAdd: () => void; onPromote: (item: CemeteryItem) => void }) {
+  const [category, setCategory] = useState<"All" | CemeteryCategory>("All");
+  const visible = items.filter((item) => category === "All" || item.category === category);
+  const tabs: ("All" | CemeteryCategory)[] = ["All", "Movie", "Game", "Software", "Study", "Other"];
+  return <div className="page-stack"><section className="cemetery-intro"><div><span className="eyebrow accent-eyebrow"><Camera size={13} /> A soft place to keep the unknown</span><h2>Screenshot <em>Cemetery.</em></h2><p>Save anything that caught your eye. No title, category, calendar, or commitment required.</p></div><button className="primary-button" onClick={onQuickAdd}><Camera size={16} /> Quick Add</button></section><div className="library-toolbar"><div className="filter-tabs cemetery-tabs">{tabs.map((tab) => <button key={tab} className={category === tab ? "selected" : ""} onClick={() => setCategory(tab)}>{tab}</button>)}</div><span className="cemetery-count">{visible.length} saved</span></div>{visible.length ? <section className="cemetery-grid">{visible.map((item) => <article className="cemetery-card" key={item.id}><div className="cemetery-card-head"><span className="cemetery-pin"><Camera size={15} /></span><span className="cemetery-date">{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "Just now"}</span></div><h3>{item.title || "Untitled"}</h3>{item.note && <p>{item.note}</p>}{item.sourceLink && <a href={item.sourceLink} target="_blank" rel="noreferrer"><Link2 size={13} /> Open source</a>}<div className="cemetery-card-foot"><span className={`category-tag ${item.category?.toLowerCase() ?? "uncategorized"}`}>{item.category ?? "Uncategorized"}</span><button className="small-action" onClick={() => onPromote(item)}>Add as item <ArrowUpRight size={13} /></button></div></article>)}</section> : <div className="empty-state"><Camera size={28} /><h3>Your cemetery is quiet</h3><p>Use Quick Add to save a link or screenshot moment without deciding what it is yet.</p><button className="dark-button" onClick={onQuickAdd}><Plus size={15} /> Save something</button></div>}</div>;
+}
+
+function QuickAddModal({ link, defaultCategory, onClose, onSave, onSetDefault, saving }: { link: string; defaultCategory: CemeteryCategory | null; onClose: () => void; onSave: (payload: { title: string; category: CemeteryCategory | null; note: string; sourceLink: string }) => void; onSetDefault: (category: CemeteryCategory | null) => void; saving: boolean }) {
+  const [sourceLink, setSourceLink] = useState(link);
+  const [note, setNote] = useState("");
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState<CemeteryCategory | null>(defaultCategory);
+  const cats: { value: CemeteryCategory; icon: typeof Gamepad2; tint: string }[] = [{ value: "Movie", icon: Clapperboard, tint: "movie" }, { value: "Game", icon: Gamepad2, tint: "game" }, { value: "Software", icon: Command, tint: "software" }, { value: "Study", icon: BookOpen, tint: "study" }, { value: "Other", icon: Tag, tint: "other" }];
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card quick-add-card" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="eyebrow accent-eyebrow"><Camera size={13} /> Screenshot Cemetery</span><h2>Save without deciding.</h2></div><button className="icon-button subtle" onClick={onClose}><X size={17} /></button></div><p className="quick-add-copy">Keep a link or thought here now. You can identify and promote it later — or leave it here forever.</p><label className="quick-field"><span>Shared link or text</span><input autoFocus value={sourceLink} onChange={(event) => setSourceLink(event.target.value)} placeholder="Paste a TikTok, Reel, or any link" /></label><label className="quick-field"><span>Optional note</span><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="What caught your eye?" rows={3} /></label><label className="quick-field"><span>Optional title</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Leave blank for Untitled" /></label><div className="quick-category-label"><span>Category, if you know it</span><small>Tap ★ to make a personal default</small></div><div className="quick-category-grid">{cats.map(({ value, icon: Icon, tint }) => <div className={`quick-category ${tint} ${category === value ? "selected" : ""}`} key={value}><button onClick={() => setCategory(category === value ? null : value)}><Icon size={17} /><span>{value}</span></button><button className="default-star" aria-label={`Set ${value} as default`} onClick={() => { const next = defaultCategory === value ? null : value; onSetDefault(next); setCategory(next); }}><Star size={13} fill={defaultCategory === value ? "currentColor" : "none"} /></button></div>)}</div><div className="quick-add-actions"><button className="text-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={saving} onClick={() => onSave({ title, category, note, sourceLink })}>{saving ? <Loader2 size={15} className="spin" /> : <Camera size={15} />} Save to Cemetery</button></div></div></div>;
 }
 
 function AddModal({ value, setValue, onClose, onAdd, metadataResults, metadataLoading, onSearchMetadata, onSelectMetadata }: { value: { title: string; type: MediaType; status: Status; genre: string; platform: string }; setValue: (value: { title: string; type: MediaType; status: Status; genre: string; platform: string }) => void; onClose: () => void; onAdd: () => void; metadataResults: MetadataResult[]; metadataLoading: boolean; onSearchMetadata: (query: string, type: MediaType) => void; onSelectMetadata: (result: MetadataResult) => void }) {

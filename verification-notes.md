@@ -19,3 +19,12 @@ Live UI verification: TMDB Series mode returned The Last of Us results with TMDB
 Live UI verification: TMDB series detail opens with poster and overview, but the season selector did not appear in this first smoke test; the episode panel fell back to placeholder Season 2 rows. The TMDB API itself returns season records, so this requires a frontend detail-query timing/normalization fix before final delivery.
 Live UI verification: after the detail request completed, The Last of Us showed cast chips, YouTube trailer links, a Season 1/Season 2 selector, and real season 1 episode titles, air dates, and watched controls. The initial missing selector was only a loading-timing observation.
 Live UI verification: switching the season selector to Season 2 updated the episode tracker to Season 2 rows and retained per-episode watched controls.
+Final integration smoke test (September 12, 2026): TypeScript checks, all 8 Vitest tests, and production build passed. The exact live preview opened successfully after correcting an initially mistyped URL. RAWG Portal search returned real game matches with RAWG artwork, platforms, and genres. TMDB The Last of Us search returned poster-backed series results. The TMDB detail view loaded overview, cast, YouTube trailers, season selector, and real Season 1/Season 2 episode rows; switching to Season 2 updated the episode list. Initial detail rendering shows a lightweight fallback while the asynchronous provider detail request completes, then enriches the modal.
+Screenshot Cemetery verification (September 12, 2026):
+- TypeScript checks, all 9 Vitest tests, and the production build passed after adding the unified items model and Cemetery flows.
+- The database migration was reviewed and applied as a non-destructive rename from mediaItems to items, with stage, category, note, sourceLink, scheduledDate, and cemeteryDefaultCategory added.
+- The `/quick-add?url=...&text=...` route opens the Quick Add modal and pre-fills the shared URL, matching the PWA share_target configuration.
+- Screenshot Cemetery appears under Collections with a count badge and category filters All / Movie / Game / Software / Study / Other.
+- Quick Add supports optional link/text, note, title, category selection, per-user default category stars, and saving with no category.
+- Promotion reuses the existing Add Item modal, keeps the same item record, and starts RAWG/TMDB lookup for titled Game/Movie captures.
+- Calendar integration was intentionally not added; scheduledDate exists in the schema for later use.

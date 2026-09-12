@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertMediaItem, InsertUser, MediaItem, episodeProgress, mediaItems, playSessions, users } from "../drizzle/schema";
+import { InsertMediaItem, InsertUser, MediaItem, episodeProgress, items, playSessions, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -36,35 +36,37 @@ export async function getUserByOpenId(openId: string) {
 export async function getMediaForUser(userId: number) {
   const db = await getDb();
   if (!db) return [] as MediaItem[];
-  return db.select().from(mediaItems).where(eq(mediaItems.userId, userId)).orderBy(desc(mediaItems.updatedAt));
+  return db.select().from(items).where(and(eq(items.userId, userId), eq(items.stage, "library"))).orderBy(desc(items.updatedAt));
 }
 
 export async function getMediaByIdForUser(userId: number, id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const rows = await db.select().from(mediaItems).where(and(eq(mediaItems.userId, userId), eq(mediaItems.id, id))).limit(1);
+  const rows = await db.select().from(items).where(and(eq(items.userId, userId), eq(items.id, id))).limit(1);
   return rows[0];
 }
 
 export async function upsertMediaForUser(userId: number, item: Omit<InsertMediaItem, "userId" | "id" | "createdAt" | "updatedAt">) {
   const db = await getDb();
   if (!db) return undefined;
-  const existing = item.externalId
-    ? await db.select().from(mediaItems).where(and(eq(mediaItems.userId, userId), eq(mediaItems.externalId, item.externalId))).limit(1)
-    : await db.select().from(mediaItems).where(and(eq(mediaItems.userId, userId), eq(mediaItems.title, item.title))).limit(1);
+  const existing = item.stage === "inbox"
+    ? []
+    : item.externalId
+    ? await db.select().from(items).where(and(eq(items.userId, userId), eq(items.externalId, item.externalId))).limit(1)
+    : await db.select().from(items).where(and(eq(items.userId, userId), eq(items.title, item.title ?? ""))).limit(1);
   if (existing[0]) {
-    await db.update(mediaItems).set({ ...item, updatedAt: new Date() }).where(and(eq(mediaItems.id, existing[0].id), eq(mediaItems.userId, userId)));
+    await db.update(items).set({ ...item, updatedAt: new Date() }).where(and(eq(items.id, existing[0].id), eq(items.userId, userId)));
     return { ...existing[0], ...item };
   }
-  const inserted = await db.insert(mediaItems).values({ ...item, userId }).$returningId();
+  const inserted = await db.insert(items).values({ ...item, userId }).$returningId();
   return { ...item, userId, id: inserted[0]?.id };
 }
 
 export async function updateMediaForUser(userId: number, id: number, patch: Partial<MediaItem>) {
   const db = await getDb();
   if (!db) return undefined;
-  await db.update(mediaItems).set({ ...patch, updatedAt: new Date() }).where(and(eq(mediaItems.id, id), eq(mediaItems.userId, userId)));
-  const rows = await db.select().from(mediaItems).where(and(eq(mediaItems.id, id), eq(mediaItems.userId, userId))).limit(1);
+  await db.update(items).set({ ...patch, updatedAt: new Date() }).where(and(eq(items.id, id), eq(items.userId, userId)));
+  const rows = await db.select().from(items).where(and(eq(items.id, id), eq(items.userId, userId))).limit(1);
   return rows[0];
 }
 
@@ -89,7 +91,27 @@ export async function addPlaySession(userId: number, input: { mediaItemId: numbe
   const db = await getDb();
   if (!db) return undefined;
   const inserted = await db.insert(playSessions).values({ userId, ...input }).$returningId();
-  const current = await db.select().from(mediaItems).where(and(eq(mediaItems.id, input.mediaItemId), eq(mediaItems.userId, userId))).limit(1);
-  if (current[0]) await db.update(mediaItems).set({ hours: current[0].hours + Math.round(input.minutes / 60), updatedAt: new Date() }).where(eq(mediaItems.id, input.mediaItemId));
+  const current = await db.select().from(items).where(and(eq(items.id, input.mediaItemId), eq(items.userId, userId))).limit(1);
+  if (current[0]) await db.update(items).set({ hours: current[0].hours + Math.round(input.minutes / 60), updatedAt: new Date() }).where(eq(items.id, input.mediaItemId));
   return { id: inserted[0]?.id, ...input };
+}
+
+export async function getInboxItemsForUser(userId: number) {
+  const db = await getDb();
+  if (!db) return [] as MediaItem[];
+  return db.select().from(items).where(and(eq(items.userId, userId), eq(items.stage, "inbox"))).orderBy(desc(items.createdAt));
+}
+
+export async function getUserPreference(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select({ cemeteryDefaultCategory: users.cemeteryDefaultCategory }).from(users).where(eq(users.id, userId)).limit(1);
+  return rows[0]?.cemeteryDefaultCategory ?? null;
+}
+
+export async function setUserPreference(userId: number, category: string | null) {
+  const db = await getDb();
+  if (!db) return category;
+  await db.update(users).set({ cemeteryDefaultCategory: category }).where(eq(users.id, userId));
+  return category;
 }

@@ -194,3 +194,27 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .season-nav select { max-width: 230px; padding: 8px 10px; border: 1px solid #e7e0f2; border-radius: 9px; background: #faf9fd; color: #3f394d; font-size: 12px; }
 .refresh-action { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 @media (max-width: 720px) { .metadata-extras { margin-inline: 12px; } .season-nav { align-items: flex-start; flex-direction: column; } .season-nav select { max-width: none; width: 100%; } }
+
+/* Screenshot Cemetery */
+.secondary-button { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #e4def9; border-radius: 10px; padding: 9px 12px; color: #5d49b9; background: #f4f1ff; font-size: 11px; font-weight: 600; }
+.secondary-button:hover { background: #e9e4ff; transform: translateY(-1px); }
+.cemetery-intro { display:flex; align-items:end; justify-content:space-between; padding: 3px 0 5px; }
+.cemetery-intro h2 { font-size: clamp(28px, 3vw, 42px); line-height: 1.06; letter-spacing: -1.5px; margin: 13px 0 8px; }
+.cemetery-intro h2 em { color:#7358e8; font-family:'Playfair Display',serif; font-weight:600; }
+.cemetery-intro p { max-width:510px; color:#7b7884; font-size:13px; line-height:1.7; margin:0; }
+.cemetery-count { color:#9a97a1; font:10px 'DM Mono',monospace; }
+.cemetery-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.cemetery-card { min-height:205px; display:flex; flex-direction:column; padding:17px; border:1px solid #ebe8e6; border-radius:16px; background:linear-gradient(145deg,#fff,#fbf9ff); box-shadow:0 8px 22px rgba(65,53,94,.04); }
+.cemetery-card:hover { transform:translateY(-3px); box-shadow:0 16px 30px rgba(45,43,55,.08); }
+.cemetery-card-head,.cemetery-card-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.cemetery-pin { width:30px; height:30px; display:grid; place-items:center; color:#7358e8; border-radius:10px; background:#eeeafd; }
+.cemetery-date { color:#aaa7b0; font:9px 'DM Mono',monospace; }
+.cemetery-card h3 { margin:19px 0 7px; font-size:17px; letter-spacing:-.4px; }
+.cemetery-card p { color:#7b7884; font-size:11px; line-height:1.55; margin:0 0 10px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.cemetery-card a { display:inline-flex; align-items:center; gap:5px; max-width:100%; overflow:hidden; color:#7358e8; font-size:10px; text-decoration:none; }
+.cemetery-card-foot { margin-top:auto; padding-top:15px; }
+.category-tag { padding:5px 8px; border-radius:7px; color:#5d49b9; background:#eeeafd; font:9px 'DM Mono',monospace; text-transform:uppercase; letter-spacing:.5px; }
+.category-tag.game { color:#237a73; background:#e2f3ef; }.category-tag.movie { color:#a24f78; background:#fae8f1; }.category-tag.software { color:#5c6ba8; background:#e8edff; }.category-tag.study { color:#a06b2b; background:#fff0d8; }.category-tag.other,.category-tag.uncategorized { color:#777681; background:#efeff1; }
+.quick-add-card { max-width:590px; }.quick-add-copy { color:#7b7884; font-size:12px; line-height:1.55; margin:-5px 0 18px; }.quick-field { display:grid; gap:7px; margin:12px 0; }.quick-field span,.quick-category-label span { color:#6f6b78; font:10px 'DM Mono',monospace; text-transform:uppercase; letter-spacing:.6px; }.quick-field input,.quick-field textarea { width:100%; border:1px solid #e7e3ed; border-radius:10px; padding:10px 11px; color:#383541; background:#fff; outline:0; font-size:12px; resize:vertical; }.quick-field input:focus,.quick-field textarea:focus { border-color:#b7a9ee; box-shadow:0 0 0 3px rgba(115,88,232,.1); }.quick-category-label { display:flex; align-items:end; justify-content:space-between; margin:18px 0 9px; }.quick-category-label small { color:#aaa7b0; font-size:9px; }.quick-category-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }.quick-category { position:relative; border:1px solid #ebe8e6; border-radius:11px; background:#fff; transition:all 180ms var(--ease-out); }.quick-category.selected { border-color:#7358e8; box-shadow:0 0 0 3px rgba(115,88,232,.1); transform:translateY(-2px); }.quick-category > button:first-child { width:100%; min-height:68px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; border:0; border-radius:inherit; background:transparent; color:#777481; font-size:10px; }.quick-category.selected > button:first-child { color:#5d49b9; }.quick-category.game { background:#f1fbf8; }.quick-category.movie { background:#fff4f8; }.quick-category.software { background:#f3f5ff; }.quick-category.study { background:#fff8eb; }.quick-category.other { background:#f6f6f7; }.default-star { position:absolute; right:4px; top:4px; width:20px; height:20px; display:grid; place-items:center; padding:0; border:0; border-radius:50%; color:#b5b0bd; background:transparent; }.default-star:hover { color:#d49c3f; background:#fff5db; }.quick-add-actions { display:flex; align-items:center; justify-content:flex-end; gap:13px; margin-top:22px; }
+@media (max-width:900px) { .cemetery-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .quick-category-grid { grid-template-columns:repeat(3,1fr); } }
+@media (max-width:640px) { .cemetery-intro { align-items:start; flex-direction:column; gap:16px; }.cemetery-grid { grid-template-columns:1fr; }.quick-category-grid { grid-template-columns:repeat(2,1fr); }.secondary-button { display:none; } }

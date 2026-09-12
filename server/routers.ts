@@ -5,11 +5,13 @@ import { callDataApi } from "./_core/dataApi";
 import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { addPlaySession, getEpisodesForUser, getMediaForUser, toggleEpisodeForUser, updateMediaForUser, upsertMediaForUser } from "./db";
+import { addPlaySession, getEpisodesForUser, getInboxItemsForUser, getMediaForUser, getUserPreference, setUserPreference, toggleEpisodeForUser, updateMediaForUser, upsertMediaForUser } from "./db";
 
 const mediaInput = z.object({
   externalId: z.string().optional(), title: z.string().min(1), type: z.enum(["Game", "Series", "Movie"]), status: z.string(), genre: z.string().optional(), platform: z.string().optional(), progress: z.number().int().min(0).max(100).default(0), rating: z.number().int().min(0).max(50).default(0), favorite: z.boolean().default(false), hours: z.number().int().min(0).default(0), detail: z.string().optional(), image: z.string().optional(), metadataJson: z.string().optional(),
 });
+const cemeteryCategory = z.enum(["Movie", "Game", "Software", "Study", "Other"]);
+const cemeteryInput = z.object({ title: z.string().max(255).optional(), category: cemeteryCategory.nullable().optional(), note: z.string().max(2000).optional(), sourceLink: z.string().max(2000).optional() });
 
 const tmdbGenres: Record<number, string> = { 28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family", 14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music", 9648: "Mystery", 10749: "Romance", 878: "Sci-fi", 10770: "TV movie", 53: "Thriller", 10752: "War", 37: "Western" };
 
@@ -91,6 +93,15 @@ export const appRouter = router({
   }),
   tracker: router({
     list: protectedProcedure.query(({ ctx }) => getMediaForUser(ctx.user.id)),
+    cemetery: protectedProcedure.query(({ ctx }) => getInboxItemsForUser(ctx.user.id)),
+    cemeteryDefault: protectedProcedure.query(({ ctx }) => getUserPreference(ctx.user.id)),
+    setCemeteryDefault: protectedProcedure.input(z.object({ category: cemeteryCategory.nullable() })).mutation(({ ctx, input }) => setUserPreference(ctx.user.id, input.category)),
+    quickAdd: protectedProcedure.input(cemeteryInput).mutation(({ ctx, input }) => upsertMediaForUser(ctx.user.id, { title: input.title?.trim() || null, type: null, category: input.category ?? null, note: input.note?.trim() || null, sourceLink: input.sourceLink?.trim() || null, stage: "inbox", status: null, genre: null, platform: null, progress: 0, rating: 0, favorite: 0, hours: 0, detail: null, image: null, metadataJson: null, externalId: null, scheduledDate: null })),
+    promote: protectedProcedure.input(z.object({ id: z.number().int(), item: mediaInput.partial().extend({ type: z.enum(["Game", "Series", "Movie"]), status: z.string() }) })).mutation(async ({ ctx, input }) => {
+      const current = await getInboxItemsForUser(ctx.user.id);
+      if (!current.some((item) => item.id === input.id)) throw new Error("Cemetery item not found");
+      return updateMediaForUser(ctx.user.id, input.id, { ...input.item, favorite: input.item.favorite === undefined ? undefined : input.item.favorite ? 1 : 0, stage: "library", category: input.item.type === "Game" ? "Game" : input.item.type === "Movie" ? "Movie" : null, title: input.item.title || "Untitled", status: input.item.status });
+    }),
     sync: protectedProcedure.input(z.object({ items: z.array(mediaInput) })).mutation(async ({ ctx, input }) => { for (const item of input.items) await upsertMediaForUser(ctx.user.id, { ...item, favorite: item.favorite ? 1 : 0 }); return getMediaForUser(ctx.user.id); }),
     update: protectedProcedure.input(z.object({ id: z.number().int(), patch: mediaInput.partial() })).mutation(({ ctx, input }) => updateMediaForUser(ctx.user.id, input.id, { ...input.patch, favorite: input.patch.favorite === undefined ? undefined : input.patch.favorite ? 1 : 0 })),
     detail: publicProcedure.input(z.object({ externalId: z.string().min(3) })).query(async ({ input }) => getMetadataDetail(input.externalId)),

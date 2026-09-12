@@ -27,4 +27,13 @@ describe("tracker authorization", () => {
     await expect(caller.tracker.refreshAll()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     await expect(caller.tracker.refresh({ id: 1 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
+
+  it("protects Screenshot Cemetery reads, saves, preferences, and promotion", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+    await expect(caller.tracker.cemetery()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.tracker.quickAdd({ sourceLink: "https://example.com" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.tracker.cemeteryDefault()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.tracker.setCemeteryDefault({ category: "Game" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.tracker.promote({ id: 1, item: { type: "Game", status: "Want to play" } })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
 });
