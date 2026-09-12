@@ -2,17 +2,24 @@ import { COOKIE_NAME } from "@shared/const";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { callDataApi } from "./_core/dataApi";
+import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { addPlaySession, getEpisodesForUser, getMediaForUser, toggleEpisodeForUser, updateMediaForUser, upsertMediaForUser } from "./db";
 
 const mediaInput = z.object({
-  externalId: z.string().optional(), title: z.string().min(1), type: z.enum(["Game", "Series", "Movie"]), status: z.string(), genre: z.string().optional(), platform: z.string().optional(), progress: z.number().int().min(0).max(100).default(0), rating: z.number().int().min(0).max(5).default(0), favorite: z.boolean().default(false), hours: z.number().int().min(0).default(0), detail: z.string().optional(), image: z.string().optional(), metadataJson: z.string().optional(),
+  externalId: z.string().optional(), title: z.string().min(1), type: z.enum(["Game", "Series", "Movie"]), status: z.string(), genre: z.string().optional(), platform: z.string().optional(), progress: z.number().int().min(0).max(100).default(0), rating: z.number().int().min(0).max(50).default(0), favorite: z.boolean().default(false), hours: z.number().int().min(0).default(0), detail: z.string().optional(), image: z.string().optional(), metadataJson: z.string().optional(),
 });
 
 function normalizeSearchItems(payload: any, type: "Game" | "Series" | "Movie") {
   if (type === "Series" && Array.isArray(payload)) return payload.slice(0, 8).map((entry: any) => ({ externalId: `tvmaze:${entry.show?.id}`, title: entry.show?.name ?? "Untitled", type, genre: entry.show?.genres?.[0] ?? "Series", platform: entry.show?.network?.name ?? entry.show?.webChannel?.name ?? "TV", image: entry.show?.image?.medium ?? entry.show?.image?.original ?? "", detail: entry.show?.premiered ? `Premiered ${entry.show.premiered.slice(0, 4)}` : "Series", status: "Want to watch" }));
   if (type === "Movie" && Array.isArray(payload?.results)) return payload.results.slice(0, 8).map((entry: any) => ({ externalId: `itunes:${entry.trackId}`, title: entry.trackName ?? "Untitled", type, genre: entry.primaryGenreName ?? "Movie", platform: "Apple TV", image: entry.artworkUrl100?.replace("100x100", "600x900") ?? "", detail: entry.releaseDate ? `Released ${entry.releaseDate.slice(0, 4)}` : "Movie", status: "Want to watch" }));
+  if (type === "Game" && Array.isArray(payload?.results)) return payload.results.slice(0, 8).map((entry: any) => {
+    const platforms = (entry.platforms ?? []).map((platform: any) => platform.platform?.name).filter(Boolean).slice(0, 4);
+    const genres = (entry.genres ?? []).map((genre: any) => genre.name).filter(Boolean).slice(0, 2);
+    const metadata = { source: "RAWG", id: entry.id, slug: entry.slug, released: entry.released, rating: entry.rating, ratingsCount: entry.ratings_count, metacritic: entry.metacritic, platforms, genres, tags: (entry.tags ?? []).slice(0, 8).map((tag: any) => tag.name), stores: (entry.stores ?? []).slice(0, 6).map((store: any) => store.store?.name), screenshots: (entry.short_screenshots ?? []).slice(0, 6).map((shot: any) => shot.image) };
+    return { externalId: `rawg:${entry.id}`, title: entry.name ?? "Untitled", type, genre: genres.join(", ") || "Game", platform: platforms.join(", ") || "Game library", image: entry.background_image ?? "", detail: [entry.released ? `Released ${entry.released.slice(0, 4)}` : "Release date unknown", entry.rating ? `${entry.rating.toFixed(1)}/5 RAWG` : ""].filter(Boolean).join(" · "), status: "Want to play", metadataJson: JSON.stringify(metadata) };
+  });
   if (type === "Game" && Array.isArray(payload?.query?.search)) return payload.query.search.slice(0, 8).map((entry: any) => ({ externalId: `wiki:${entry.pageid}`, title: entry.title, type, genre: "Game", platform: "Game library", image: "", detail: "Metadata result", status: "Want to play" }));
   return [];
 }
@@ -31,6 +38,11 @@ export const appRouter = router({
       try {
         if (input.type === "Series") return normalizeSearchItems(await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(input.query)}`).then((response) => response.json()), input.type);
         if (input.type === "Movie") return normalizeSearchItems(await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(input.query)}&media=movie&entity=movie&limit=8`).then((response) => response.json()), input.type);
+        if (input.type === "Game" && ENV.rawgApiKey) {
+          const response = await fetch(`https://api.rawg.io/api/games?key=${encodeURIComponent(ENV.rawgApiKey)}&search=${encodeURIComponent(input.query)}&page_size=8&search_precise=true`);
+          if (!response.ok) throw new Error(`RAWG returned ${response.status}`);
+          return normalizeSearchItems(await response.json(), input.type);
+        }
         return normalizeSearchItems(await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(`${input.query} video game`)}&format=json&origin=*`).then((response) => response.json()), input.type);
       } catch (error) {
         console.warn("[Metadata] Search failed", error);

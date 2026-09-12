@@ -63,7 +63,8 @@ type MediaItem = {
   metadataJson?: string;
 };
 
-type MetadataResult = { externalId: string; title: string; type: MediaType; genre: string; platform: string; image: string; detail: string; status: Status };
+type MetadataResult = { externalId: string; title: string; type: MediaType; genre: string; platform: string; image: string; detail: string; status: Status; metadataJson?: string };
+type NewItem = { title: string; type: MediaType; status: Status; genre: string; platform: string; externalId?: string; image?: string; detail?: string; metadataJson?: string };
 
 const initialItems: MediaItem[] = [
   {
@@ -250,6 +251,11 @@ function toSyncItem(item: MediaItem) {
   };
 }
 
+function parseMetadata(value?: string) {
+  if (!value) return null;
+  try { return JSON.parse(value) as { source?: string; released?: string; metacritic?: number; tags?: string[]; stores?: string[]; platforms?: string[]; developers?: string[]; publishers?: string[] }; } catch { return null; }
+}
+
 function formatDate() {
   return new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
 }
@@ -298,7 +304,7 @@ export default function Home() {
   const [showAdd, setShowAdd] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
   const [monthOffset, setMonthOffset] = useState(0);
-  const [newItem, setNewItem] = useState({ title: "", type: "Game" as MediaType, status: "Want to play" as Status, genre: "Adventure", platform: "" });
+  const [newItem, setNewItem] = useState<NewItem>({ title: "", type: "Game", status: "Want to play", genre: "Adventure", platform: "" });
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
@@ -367,13 +373,15 @@ export default function Home() {
       genre: newItem.genre,
       platform: newItem.platform || (newItem.type === "Game" ? "My library" : "Watchlist"),
       progress: 0,
-      detail: "Just added",
-      image: newItem.type === "Game" ? "https://images.unsplash.com/photo-1593305841991-05c297ba4575?auto=format&fit=crop&w=900&q=85" : "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=900&q=85",
+      detail: newItem.detail || "Just added",
+      image: newItem.image || (newItem.type === "Game" ? "https://images.unsplash.com/photo-1593305841991-05c297ba4575?auto=format&fit=crop&w=900&q=85" : "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=900&q=85"),
       color: newItem.type === "Game" ? "#d8e9f4" : "#eed8eb",
       rating: 0,
       favorite: false,
       lastActive: "Just now",
       hours: 0,
+      externalId: newItem.externalId,
+      metadataJson: newItem.metadataJson,
     };
     const nextItems = [item, ...items];
     setItems(nextItems);
@@ -415,7 +423,7 @@ export default function Home() {
         {page === "insights" && <Insights stats={stats} items={items} />}
       </main>
 
-      {showAdd && <AddModal value={newItem} setValue={setNewItem} onClose={() => setShowAdd(false)} onAdd={addItem} metadataResults={(metadataSearch.data as MetadataResult[] | undefined) ?? []} metadataLoading={metadataSearch.isFetching} onSearchMetadata={(query, type) => setMetadataQuery({ query, type })} onSelectMetadata={(result: MetadataResult) => { setNewItem({ title: result.title, type: result.type, status: result.status, genre: result.genre, platform: result.platform }); }} />}
+      {showAdd && <AddModal value={newItem} setValue={setNewItem} onClose={() => setShowAdd(false)} onAdd={addItem} metadataResults={(metadataSearch.data as MetadataResult[] | undefined) ?? []} metadataLoading={metadataSearch.isFetching} onSearchMetadata={(query, type) => setMetadataQuery({ query, type })} onSelectMetadata={(result: MetadataResult) => { setNewItem({ ...newItem, title: result.title, type: result.type, status: result.status, genre: result.genre, platform: result.platform, externalId: result.externalId, image: result.image, detail: result.detail, metadataJson: result.metadataJson }); }} />}
       {selectedItem && <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onAdvance={() => { advanceItem(selectedItem); setSelectedItem(null); }} onFavorite={() => toggleFavorite(selectedItem)} isAuthenticated={isAuthenticated} onPlaytimeLogged={(minutes) => updateItem(selectedItem.id, { hours: selectedItem.hours + Math.round(minutes / 60), detail: `${selectedItem.hours + Math.round(minutes / 60)}h logged` })} />}
       {!isAuthenticated && <button className="account-pill" onClick={startLogin}><span className="account-dot" /> Sign in to sync</button>}
       {isAuthenticated && <><button className="account-pill" onClick={syncLibrary} title="Sync your library"><span className={`account-dot live ${syncing ? "pulse" : ""}`} /> {syncing ? "Syncing…" : "Sync library"}</button><button className="account-logout" onClick={() => logout()}>Sign out</button></>}
@@ -468,6 +476,7 @@ function DetailModal({ item, onClose, onAdvance, onFavorite, isAuthenticated, on
   const [watchedEpisodes, setWatchedEpisodes] = useState<number[]>([]);
   const [minutes, setMinutes] = useState("60");
   const [note, setNote] = useState("");
+  const richMetadata = parseMetadata(item.metadataJson);
   useEffect(() => { if (episodeQuery.data) setWatchedEpisodes(episodeQuery.data.filter((episode) => Boolean(episode.watched)).map((episode) => episode.episodeNumber)); }, [episodeQuery.data]);
   const episodeRows = Array.from({ length: 8 }, (_, index) => ({ number: index + 1, title: `Episode ${index + 1}` }));
   const toggleEpisode = (episodeNumber: number) => {
@@ -483,5 +492,5 @@ function DetailModal({ item, onClose, onAdvance, onFavorite, isAuthenticated, on
     else toast.success("Play session added to this device");
     setNote("");
   };
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="detail-modal detail-modal-tall" onMouseDown={(event) => event.stopPropagation()}><div className="detail-hero"><Cover item={item} large /><div className="detail-hero-content"><div className="card-overline"><span>{item.type} · {item.genre}</span><button className={`heart-button ${item.favorite ? "liked" : ""}`} onClick={onFavorite}><Heart size={16} fill={item.favorite ? "currentColor" : "none"} /></button></div><h2>{item.title}</h2><p>{item.platform} <span>·</span> {item.lastActive}</p><div className="detail-rating">{item.rating > 0 ? <><Star size={15} fill="currentColor" /> {item.rating} personal rating</> : "Not rated yet"}</div></div><button className="detail-close" onClick={onClose}><X size={18} /></button></div><div className="detail-body"><div className="detail-stat"><span>Status</span><strong>{item.status}</strong></div><div className="detail-stat"><span>Progress</span><strong>{item.progress}%</strong></div><div className="detail-stat"><span>Time logged</span><strong>{item.hours} hours</strong></div><div className="detail-progress"><div className="progress-line"><ProgressBar value={item.progress} color={item.type === "Game" ? "#7358e8" : "#d986b3"} /><strong>{item.progress}%</strong></div><small>{item.detail}</small></div></div>{item.type === "Series" ? <section className="episode-panel"><div className="episode-panel-head"><div><span className="eyebrow"><ListChecks size={13} /> Episode tracker</span><strong>Season 2</strong></div><span>{watchedEpisodes.length} / {episodeRows.length} watched</span></div><div className="episode-list">{episodeRows.map((episode) => <button className={`episode-row ${watchedEpisodes.includes(episode.number) ? "watched" : ""}`} key={episode.number} onClick={() => toggleEpisode(episode.number)}><span className="episode-check">{watchedEpisodes.includes(episode.number) && <Check size={12} />}</span><span><strong>{episode.title}</strong><small>Season 2 · Episode {episode.number}</small></span><ChevronRight size={14} className="muted-icon" /></button>)}</div></section> : <section className="playtime-panel"><div><span className="eyebrow"><Timer size={13} /> Playtime log</span><strong>Capture a session</strong></div><div className="playtime-form"><label>Minutes<input type="number" min="1" max="1440" value={minutes} onChange={(event) => setMinutes(event.target.value)} /></label><label>Note<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional note" /></label><button className="small-search-button" onClick={logPlaytime} disabled={playMutation.isPending}>{playMutation.isPending ? <Loader2 size={14} className="spin" /> : <Clock3 size={14} />} Log session</button></div></section>}<div className="detail-actions"><button className="text-button" onClick={onClose}>Close</button><button className="dark-button" onClick={onAdvance}>{item.status === "Completed" ? "Move back to active" : "Update status"} <Check size={15} /></button></div></div></div>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="detail-modal detail-modal-tall" onMouseDown={(event) => event.stopPropagation()}><div className="detail-hero"><Cover item={item} large /><div className="detail-hero-content"><div className="card-overline"><span>{item.type} · {item.genre}</span><button className={`heart-button ${item.favorite ? "liked" : ""}`} onClick={onFavorite}><Heart size={16} fill={item.favorite ? "currentColor" : "none"} /></button></div><h2>{item.title}</h2><p>{item.platform} <span>·</span> {item.lastActive}</p><div className="detail-rating">{item.rating > 0 ? <><Star size={15} fill="currentColor" /> {item.rating} personal rating</> : "Not rated yet"}</div></div><button className="detail-close" onClick={onClose}><X size={18} /></button></div><div className="detail-body"><div className="detail-stat"><span>Status</span><strong>{item.status}</strong></div><div className="detail-stat"><span>Progress</span><strong>{item.progress}%</strong></div><div className="detail-stat"><span>Time logged</span><strong>{item.hours} hours</strong></div><div className="detail-progress"><div className="progress-line"><ProgressBar value={item.progress} color={item.type === "Game" ? "#7358e8" : "#d986b3"} /><strong>{item.progress}%</strong></div><small>{item.detail}</small></div></div>{richMetadata && <section className="metadata-detail"><div className="metadata-detail-head"><span className="eyebrow"><Sparkles size={13} /> Enriched metadata</span>{richMetadata.source && <small>via {richMetadata.source}</small>}</div><div className="metadata-detail-grid">{richMetadata.released && <span><strong>Released</strong><small>{richMetadata.released}</small></span>}{richMetadata.metacritic && <span><strong>Metacritic</strong><small>{richMetadata.metacritic}/100</small></span>}{richMetadata.platforms?.length ? <span><strong>Platforms</strong><small>{richMetadata.platforms.join(", ")}</small></span> : null}{richMetadata.stores?.length ? <span><strong>Stores</strong><small>{richMetadata.stores.join(", ")}</small></span> : null}</div>{richMetadata.tags?.length ? <div className="metadata-tags">{richMetadata.tags.slice(0, 6).map((tag) => <span key={tag}>{tag}</span>)}</div> : null}</section>}{item.type === "Series" ? <section className="episode-panel"><div className="episode-panel-head"><div><span className="eyebrow"><ListChecks size={13} /> Episode tracker</span><strong>Season 2</strong></div><span>{watchedEpisodes.length} / {episodeRows.length} watched</span></div><div className="episode-list">{episodeRows.map((episode) => <button className={`episode-row ${watchedEpisodes.includes(episode.number) ? "watched" : ""}`} key={episode.number} onClick={() => toggleEpisode(episode.number)}><span className="episode-check">{watchedEpisodes.includes(episode.number) && <Check size={12} />}</span><span><strong>{episode.title}</strong><small>Season 2 · Episode {episode.number}</small></span><ChevronRight size={14} className="muted-icon" /></button>)}</div></section> : <section className="playtime-panel"><div><span className="eyebrow"><Timer size={13} /> Playtime log</span><strong>Capture a session</strong></div><div className="playtime-form"><label>Minutes<input type="number" min="1" max="1440" value={minutes} onChange={(event) => setMinutes(event.target.value)} /></label><label>Note<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional note" /></label><button className="small-search-button" onClick={logPlaytime} disabled={playMutation.isPending}>{playMutation.isPending ? <Loader2 size={14} className="spin" /> : <Clock3 size={14} />} Log session</button></div></section>}<div className="detail-actions"><button className="text-button" onClick={onClose}>Close</button><button className="dark-button" onClick={onAdvance}>{item.status === "Completed" ? "Move back to active" : "Update status"} <Check size={15} /></button></div></div></div>;
 }
