@@ -36,4 +36,9 @@ describe("tracker authorization", () => {
     await expect(caller.tracker.setCemeteryDefault({ category: "Game" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     await expect(caller.tracker.promote({ id: 1, item: { type: "Game", status: "Want to play" } })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
+
+  it("protects calendar scheduling", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+    await expect(caller.tracker.schedule({ id: 1, scheduledDate: Date.now() })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
 });
