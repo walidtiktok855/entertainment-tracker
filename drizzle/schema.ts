@@ -11,6 +11,7 @@ export const users = mysqlTable("users", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
   cemeteryDefaultCategory: varchar("cemeteryDefaultCategory", { length: 32 }),
+  monthlyGoal: int("monthlyGoal").default(10).notNull(),
 });
 
 export const items = mysqlTable("items", {
@@ -24,6 +25,7 @@ export const items = mysqlTable("items", {
   sourceLink: text("sourceLink"),
   stage: mysqlEnum("stage", ["inbox", "library"]).default("library").notNull(),
   scheduledDate: timestamp("scheduledDate"),
+  completedAt: timestamp("completedAt"),
   status: varchar("status", { length: 40 }),
   genre: varchar("genre", { length: 120 }),
   platform: varchar("platform", { length: 120 }),

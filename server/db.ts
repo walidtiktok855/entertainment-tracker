@@ -115,3 +115,17 @@ export async function setUserPreference(userId: number, category: string | null)
   await db.update(users).set({ cemeteryDefaultCategory: category }).where(eq(users.id, userId));
   return category;
 }
+
+export async function getMonthlyGoal(userId: number) {
+  const db = await getDb();
+  if (!db) return 10;
+  const rows = await db.select({ monthlyGoal: users.monthlyGoal }).from(users).where(eq(users.id, userId)).limit(1);
+  return rows[0]?.monthlyGoal ?? 10;
+}
+
+export async function setMonthlyGoal(userId: number, monthlyGoal: number) {
+  const db = await getDb();
+  if (!db) return monthlyGoal;
+  await db.update(users).set({ monthlyGoal }).where(eq(users.id, userId));
+  return monthlyGoal;
+}
